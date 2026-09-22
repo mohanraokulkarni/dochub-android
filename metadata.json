@@ -1,0 +1,6 @@
+{
+  "name": "DocHub",
+  "description": "Personal offline document management and preparation native Android application and interactive simulator.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
