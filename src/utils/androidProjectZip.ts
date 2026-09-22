@@ -109,12 +109,27 @@ jobs:
           distribution: 'temurin'
           cache: gradle
       - uses: android-actions/setup-android@v3
-      - run: chmod +x gradlew
-      - run: ./gradlew assembleDebug --stacktrace
+        with:
+          packages: |
+            platform-tools
+            platforms;android-35
+            build-tools;35.0.0
+      - run: yes | sdkmanager --licenses || true
+      - run: chmod +x ./gradlew
+      - run: ./gradlew assembleDebug
+      - name: Verify APK file exists
+        run: |
+          if [ ! -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
+            echo "Error: app/build/outputs/apk/debug/app-debug.apk does not exist!" >&2
+            exit 1
+          fi
+          echo "Found APK at app/build/outputs/apk/debug/app-debug.apk"
+          ls -lh app/build/outputs/apk/debug/app-debug.apk
       - uses: actions/upload-artifact@v4
         with:
           name: dochub-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk`
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error`
   );
 
   // Fetch or populate gradlew and gradlew.bat

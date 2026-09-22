@@ -62,12 +62,22 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
       - uses: android-actions/setup-android@v3
-      - run: chmod +x gradlew
+        with:
+          packages: |
+            platform-tools
+            platforms;android-35
+            build-tools;35.0.0
+      - run: yes | sdkmanager --licenses || true
+      - run: chmod +x ./gradlew
       - run: ./gradlew assembleDebug
+      - name: Verify APK file exists
+        run: |
+          test -f app/build/outputs/apk/debug/app-debug.apk
       - uses: actions/upload-artifact@v4
         with:
           name: dochub-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk`,
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error`,
     'MainActivity.kt': `package com.dochub.app
 
 import android.os.Bundle
