@@ -7,18 +7,16 @@ import {
   FileText,
   Minimize2,
   GitMerge,
-  Split,
-  Sliders,
   ChevronRight,
-  ShieldCheck,
-  HardDrive
+  Shield,
+  Layers,
+  ArrowRight
 } from 'lucide-react';
-import { StoredDocument, ConversionRecord, DocumentCategory } from '../types';
+import { StoredDocument, DocumentCategory } from '../types';
 
 interface HomeScreenProps {
   documents: StoredDocument[];
-  history: ConversionRecord[];
-  onNavigate: (tab: 'documents' | 'prepare' | 'history' | 'settings') => void;
+  onNavigate: (tab: 'documents' | 'prepare' | 'settings') => void;
   onImportFiles: (files: FileList | File[], category?: DocumentCategory) => Promise<void>;
   onSelectDocForPrepare: (doc: StoredDocument) => void;
   onOpenAndroidModal?: () => void;
@@ -26,7 +24,6 @@ interface HomeScreenProps {
 
 export function HomeScreen({
   documents,
-  history,
   onNavigate,
   onImportFiles,
   onSelectDocForPrepare,
@@ -40,11 +37,10 @@ export function HomeScreen({
     }
   };
 
-  const recentDocs = documents.slice(0, 5);
-  const recentHistory = history.slice(0, 4);
+  const recentDocs = documents.slice(0, 4);
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-6 pb-20 max-w-2xl mx-auto">
       <input
         ref={fileInputRef}
         type="file"
@@ -53,150 +49,78 @@ export function HomeScreen({
         onChange={handleFileInputChange}
       />
 
-      {/* Hero Header */}
-      <div className="bg-gradient-to-r from-blue-700 via-blue-800 to-indigo-900 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
-        <div className="relative z-10">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-medium text-blue-100 mb-3 border border-white/10">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> 100% Offline • Airplane Mode Ready
+      {/* Minimal, Calm Header */}
+      <div className="pt-2 px-1">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">DocHub</h1>
+            <p className="text-slate-500 text-sm mt-0.5">Store once. Find fast.</p>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">DocHub</h1>
-          <p className="text-blue-100 text-sm mt-1 max-w-lg leading-relaxed">
-            "Store once. Find fast. Get the format you need."
-          </p>
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-medium border border-slate-200">
+            <Shield className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Encrypted Vault</span>
+          </div>
+        </div>
 
-          {/* Primary Action Buttons */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-6">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center justify-center gap-2.5 bg-white text-blue-900 font-semibold px-5 py-3 rounded-2xl shadow-md hover:bg-blue-50 transition active:scale-[0.98] cursor-pointer"
-            >
-              <FilePlus className="w-5 h-5 text-blue-700" />
-              <span>+ Add Document</span>
-            </button>
+        {/* 3 Primary Action Buttons */}
+        <div className="mt-5 space-y-2.5">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full flex items-center justify-center gap-2.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-semibold py-3.5 px-5 rounded-2xl shadow-sm transition cursor-pointer"
+          >
+            <FilePlus className="w-5 h-5" />
+            <span>+ Add Document</span>
+          </button>
+
+          <div className="grid grid-cols-2 gap-2.5">
             <button
               onClick={() => onNavigate('documents')}
-              className="flex items-center justify-center gap-2.5 bg-blue-600/40 hover:bg-blue-600/60 text-white font-semibold px-5 py-3 rounded-2xl border border-white/20 transition active:scale-[0.98] cursor-pointer"
+              className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 active:scale-[0.99] text-slate-800 font-medium py-3 px-4 rounded-2xl border border-slate-200 shadow-xs transition cursor-pointer"
             >
-              <Search className="w-5 h-5" />
-              <span>Find Document</span>
+              <Search className="w-4 h-4 text-slate-500" />
+              <span>Find Documents</span>
+            </button>
+
+            <button
+              onClick={() => onNavigate('prepare')}
+              className="flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200/80 active:scale-[0.99] text-slate-800 font-medium py-3 px-4 rounded-2xl transition cursor-pointer"
+            >
+              <Wand2 className="w-4 h-4 text-blue-600" />
+              <span>Prepare Document</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Prepare Document Banner */}
-      <div
-        onClick={() => onNavigate('prepare')}
-        className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200/80 rounded-2xl p-5 hover:border-amber-400 transition cursor-pointer shadow-sm group"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-700 group-hover:scale-105 transition">
-              <Wand2 className="w-6 h-6" />
-            </div>
-            <div>
-              <h2 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                Prepare Document
-                <span className="text-[11px] font-semibold bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">
-                  Key Feature
-                </span>
-              </h2>
-              <p className="text-xs text-slate-600 mt-0.5">
-                Auto-convert, resize & compress to exact portal specifications (Passport, Exam, Signature, Resume)
-              </p>
-            </div>
-          </div>
-          <ChevronRight className="w-5 h-5 text-slate-400 group-hover:translate-x-1 transition" />
-        </div>
-      </div>
-
-      {/* Quick Actions Grid */}
-      <div>
-        <h2 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
-          Quick Actions
-        </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {[
-            { title: 'Image → PDF', icon: FileText, desc: 'Multiple images to A4/Letter', action: () => onNavigate('prepare') },
-            { title: 'PDF → Image', icon: FileImage, desc: 'Extract pages to JPG/PNG', action: () => onNavigate('prepare') },
-            { title: 'Compress Image', icon: Minimize2, desc: 'Smart target-size compression', action: () => onNavigate('prepare') },
-            { title: 'Merge PDF', icon: GitMerge, desc: 'Combine multiple PDFs', action: () => onNavigate('prepare') },
-            { title: 'Split PDF', icon: Split, desc: 'Extract specific pages', action: () => onNavigate('prepare') },
-            { title: 'Presets', icon: Sliders, desc: 'Custom application requirements', action: () => onNavigate('prepare') },
-          ].map((item, idx) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={idx}
-                onClick={item.action}
-                className="flex flex-col items-start p-4 bg-white border border-slate-200/80 rounded-2xl hover:border-blue-400 hover:shadow-md transition text-left group cursor-pointer"
-              >
-                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center mb-2.5 group-hover:bg-blue-600 group-hover:text-white transition">
-                  <Icon className="w-4 h-4" />
-                </div>
-                <span className="font-semibold text-xs sm:text-sm text-slate-900">{item.title}</span>
-                <span className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">{item.desc}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* APK Build Center Banner */}
-      {onOpenAndroidModal && (
-        <div
-          onClick={onOpenAndroidModal}
-          className="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-white hover:border-blue-500 transition cursor-pointer shadow-md group relative overflow-hidden"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-400 group-hover:scale-105 transition">
-                <HardDrive className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-100">
-                    DocHub Android APK Build Center
-                  </span>
-                  <span className="text-[10px] font-mono bg-blue-500/30 text-blue-300 px-2 py-0.5 rounded border border-blue-400/30">
-                    gradlew.bat assembleDebug
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Get your debug APK for Windows, Android Studio, or Cloud CI/CD
-                </p>
-              </div>
-            </div>
-            <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-blue-400 group-hover:translate-x-0.5 transition" />
-          </div>
-        </div>
-      )}
-
       {/* Recent Documents */}
-      <div>
+      <div className="px-1">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+          <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
             Recent Documents
-            <span className="text-xs font-normal text-slate-500">({documents.length} stored)</span>
           </h2>
-          <button
-            onClick={() => onNavigate('documents')}
-            className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-          >
-            View all
-          </button>
+          {documents.length > 0 && (
+            <button
+              onClick={() => onNavigate('documents')}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-0.5"
+            >
+              <span>See all ({documents.length})</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          )}
         </div>
 
         {recentDocs.length === 0 ? (
-          <div className="bg-slate-50 border border-dashed border-slate-300 rounded-2xl p-8 text-center">
-            <HardDrive className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-            <p className="text-sm font-medium text-slate-700">No documents stored locally yet</p>
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-7 text-center shadow-xs">
+            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-3 text-slate-400">
+              <Layers className="w-6 h-6" />
+            </div>
+            <p className="text-sm font-semibold text-slate-800">No documents stored yet</p>
             <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
-              Tap "Add Document" to safely import files into your private local vault.
+              Store your ID, passport, or certificates safely offline in encrypted local storage.
             </p>
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-500 transition"
+              className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3.5 py-2 rounded-xl transition"
             >
               <FilePlus className="w-4 h-4" /> Import Document
             </button>
@@ -206,82 +130,125 @@ export function HomeScreen({
             {recentDocs.map((doc) => (
               <div
                 key={doc.id}
-                className="flex items-center justify-between p-3.5 bg-white border border-slate-200/80 rounded-2xl hover:border-slate-300 transition"
+                onClick={() => onNavigate('documents')}
+                className="flex items-center justify-between p-3 bg-white border border-slate-200/80 rounded-2xl hover:border-slate-300 transition shadow-xs cursor-pointer group"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0 text-slate-700">
+                  <div
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                      doc.extension === 'pdf' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'
+                    }`}
+                  >
                     {doc.extension === 'pdf' ? (
-                      <FileText className="w-5 h-5 text-red-500" />
+                      <FileText className="w-5 h-5" />
                     ) : (
-                      <FileImage className="w-5 h-5 text-blue-600" />
+                      <FileImage className="w-5 h-5" />
                     )}
                   </div>
                   <div className="min-w-0">
-                    <p className="font-semibold text-sm text-slate-900 truncate">{doc.displayName}</p>
+                    <p className="font-semibold text-sm text-slate-900 truncate group-hover:text-blue-600 transition">
+                      {doc.displayName}
+                    </p>
                     <p className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
-                      <span className="bg-slate-100 px-2 py-0.5 rounded text-[11px] font-medium text-slate-700">
-                        {doc.category}
-                      </span>
+                      <span className="font-medium text-slate-600">{doc.category}</span>
+                      <span>•</span>
                       <span>{(doc.sizeBytes / 1024).toFixed(1)} KB</span>
                       <span>•</span>
-                      <span className="uppercase font-mono">{doc.extension}</span>
+                      <span className="uppercase font-mono text-[11px]">.{doc.extension}</span>
                     </p>
                   </div>
                 </div>
 
-                <button
-                  onClick={() => {
-                    onSelectDocForPrepare(doc);
-                    onNavigate('prepare');
-                  }}
-                  className="shrink-0 text-xs font-semibold text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition"
-                >
-                  Prepare
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectDocForPrepare(doc);
+                      onNavigate('prepare');
+                    }}
+                    className="text-xs font-semibold text-slate-700 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 px-2.5 py-1.5 rounded-lg transition"
+                  >
+                    Prepare
+                  </button>
+                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition" />
+                </div>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      {/* Recent Conversions */}
-      {recentHistory.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-bold text-slate-900">Recent Conversions</h2>
-            <button
-              onClick={() => onNavigate('history')}
-              className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-            >
-              History
-            </button>
-          </div>
-
-          <div className="space-y-2">
-            {recentHistory.map((item) => (
-              <div
-                key={item.id}
-                className="p-3 bg-white border border-slate-200/80 rounded-2xl flex items-center justify-between"
+      {/* Quick Actions (clean 4-card grid) */}
+      <div className="px-1">
+        <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3">
+          Quick Actions
+        </h2>
+        <div className="grid grid-cols-2 gap-2.5">
+          {[
+            {
+              title: 'JPG → PNG',
+              desc: 'Convert format',
+              icon: FileImage,
+              action: () => onNavigate('prepare'),
+            },
+            {
+              title: 'Image → PDF',
+              desc: 'Multi-page document',
+              icon: FileText,
+              action: () => onNavigate('prepare'),
+            },
+            {
+              title: 'Compress',
+              desc: 'Target file size',
+              icon: Minimize2,
+              action: () => onNavigate('prepare'),
+            },
+            {
+              title: 'Merge PDF',
+              desc: 'Combine documents',
+              icon: GitMerge,
+              action: () => onNavigate('prepare'),
+            },
+          ].map((item, idx) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={idx}
+                onClick={item.action}
+                className="flex items-center gap-3 p-3.5 bg-white border border-slate-200/80 rounded-2xl hover:border-blue-400 hover:shadow-xs transition text-left cursor-pointer group"
               >
+                <div className="w-9 h-9 rounded-xl bg-slate-100 group-hover:bg-blue-50 group-hover:text-blue-600 text-slate-700 flex items-center justify-center shrink-0 transition">
+                  <Icon className="w-4 h-4" />
+                </div>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-xs text-slate-900">{item.operation}</span>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">
-                      {item.status}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">{item.parameters}</p>
+                  <p className="font-semibold text-xs sm:text-sm text-slate-900">{item.title}</p>
+                  <p className="text-[11px] text-slate-500">{item.desc}</p>
                 </div>
-                <div className="text-right">
-                  <span className="text-xs font-bold text-slate-800">
-                    {(item.outputSizeBytes / 1024).toFixed(1)} KB
-                  </span>
-                  <p className="text-[10px] text-slate-400">
-                    {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Build Center Shortcut banner */}
+      {onOpenAndroidModal && (
+        <div className="px-1 pt-2">
+          <div
+            onClick={onOpenAndroidModal}
+            className="flex items-center justify-between p-3.5 bg-slate-900 text-white rounded-2xl hover:bg-slate-800 transition cursor-pointer shadow-xs"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
+                <Shield className="w-4 h-4" />
               </div>
-            ))}
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-white truncate">DocHub Native Android APK</p>
+                <p className="text-[11px] text-slate-400 truncate">Hardware Keystore AES-256-GCM • 100% Offline</p>
+              </div>
+            </div>
+            <span className="text-xs text-blue-400 font-medium shrink-0 flex items-center gap-1">
+              View Guide <ChevronRight className="w-3.5 h-3.5" />
+            </span>
           </div>
         </div>
       )}

@@ -367,6 +367,150 @@ dependencies {
   // Kotlin Sources
   const kotlinPkg = mainDir?.folder('java')?.folder('com')?.folder('dochub')?.folder('app');
 
+  const securityPkg = kotlinPkg?.folder('security');
+  securityPkg?.file(
+    'CryptoManager.kt',
+    `package com.dochub.app.security
+
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.CipherInputStream
+import javax.crypto.CipherOutputStream
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
+
+class CryptoManager {
+    companion object {
+        private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+        private const val KEY_ALIAS = "DocHubMasterKey"
+        private const val ALGORITHM = KeyProperties.KEY_ALGORITHM_AES
+        private const val BLOCK_MODE = KeyProperties.BLOCK_MODE_GCM
+        private const val PADDING = KeyProperties.ENCRYPTION_PADDING_NONE
+        private const val TRANSFORMATION = "\$ALGORITHM/\$BLOCK_MODE/\$PADDING"
+        private const val TAG_LENGTH_BITS = 128
+        private const val IV_LENGTH_BYTES = 12
+        val MAGIC_HEADER = "DOCHUB_ENC_V1".toByteArray(Charsets.UTF_8)
+    }
+
+    private val keyStore: KeyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+
+    private fun getOrCreateKey(): SecretKey {
+        val existingKey = keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry
+        return existingKey?.secretKey ?: generateKey()
+    }
+
+    private fun generateKey(): SecretKey {
+        val keyGen = KeyGenerator.getInstance(ALGORITHM, ANDROID_KEYSTORE)
+        val spec = KeyGenParameterSpec.Builder(
+            KEY_ALIAS,
+            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+        )
+            .setBlockModes(BLOCK_MODE)
+            .setEncryptionPaddings(PADDING)
+            .setKeySize(256)
+            .setUserAuthenticationRequired(false)
+            .build()
+        keyGen.init(spec)
+        return keyGen.generateKey()
+    }
+
+    fun isFileEncrypted(file: File): Boolean {
+        if (!file.exists() || file.length() < MAGIC_HEADER.size) return false
+        val buffer = ByteArray(MAGIC_HEADER.size)
+        file.inputStream().use { it.read(buffer) }
+        return buffer.contentEquals(MAGIC_HEADER)
+    }
+
+    fun encryptStream(outputStream: OutputStream): OutputStream {
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
+        val iv = cipher.iv
+        outputStream.write(MAGIC_HEADER)
+        outputStream.write(iv)
+        outputStream.flush()
+        return CipherOutputStream(outputStream, cipher)
+    }
+
+    fun decryptStream(inputStream: InputStream): InputStream {
+        val header = ByteArray(MAGIC_HEADER.size)
+        val bytesRead = inputStream.read(header)
+        if (bytesRead != MAGIC_HEADER.size || !header.contentEquals(MAGIC_HEADER)) {
+            throw IllegalArgumentException("Invalid file header")
+        }
+        val iv = ByteArray(IV_LENGTH_BYTES)
+        val ivBytesRead = inputStream.read(iv)
+        if (ivBytesRead != IV_LENGTH_BYTES) {
+            throw IllegalArgumentException("Malformed initialization vector")
+        }
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        val spec = GCMParameterSpec(TAG_LENGTH_BITS, iv)
+        cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), spec)
+        return CipherInputStream(inputStream, cipher)
+    }
+}`
+  );
+
+  securityPkg?.file(
+    'AppLockManager.kt',
+    `package com.dochub.app.security
+
+import android.content.Context
+import android.content.SharedPreferences
+import java.security.MessageDigest
+
+class AppLockManager(context: Context) {
+    companion object {
+        private const val PREFS_NAME = "dochub_security_prefs"
+        private const val KEY_LOCK_MODE = "lock_mode"
+        private const val KEY_PIN_HASH = "pin_hash"
+        const val MODE_OFF = "OFF"
+        const val MODE_PIN = "PIN"
+        const val MODE_BIOMETRIC = "BIOMETRIC"
+    }
+
+    private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    var isUnlocked: Boolean = false
+
+    fun getLockMode(): String = prefs.getString(KEY_LOCK_MODE, MODE_OFF) ?: MODE_OFF
+    fun isLockEnabled(): Boolean = getLockMode() != MODE_OFF
+
+    fun setLockModeOff() {
+        prefs.edit().putString(KEY_LOCK_MODE, MODE_OFF).remove(KEY_PIN_HASH).apply()
+        isUnlocked = true
+    }
+
+    fun setPin(pin: String) {
+        val hash = hashPin(pin)
+        prefs.edit().putString(KEY_LOCK_MODE, MODE_PIN).putString(KEY_PIN_HASH, hash).apply()
+        isUnlocked = true
+    }
+
+    fun verifyPin(pin: String): Boolean {
+        val storedHash = prefs.getString(KEY_PIN_HASH, null) ?: return false
+        val ok = storedHash == hashPin(pin)
+        if (ok) isUnlocked = true
+        return ok
+    }
+
+    fun setBiometricMode() {
+        prefs.edit().putString(KEY_LOCK_MODE, MODE_BIOMETRIC).apply()
+        isUnlocked = true
+    }
+
+    private fun hashPin(pin: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val bytes = digest.digest(pin.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+}`
+  );
+
   kotlinPkg?.file(
     'DocHubApplication.kt',
     `package com.dochub.app
@@ -380,6 +524,7 @@ import com.dochub.app.data.storage.FileManager
 import com.dochub.app.engine.ImageProcessor
 import com.dochub.app.engine.PdfProcessor
 import com.dochub.app.engine.SmartPreparer
+import com.dochub.app.security.AppLockManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 
@@ -387,6 +532,7 @@ class DocHubApplication : Application() {
     val applicationScope = CoroutineScope(SupervisorJob())
     val database by lazy { DocHubDatabase.getDatabase(this, applicationScope) }
     val fileManager by lazy { FileManager(this) }
+    val appLockManager by lazy { AppLockManager(this) }
     val documentRepository by lazy { DocumentRepository(database.documentDao()) }
     val historyRepository by lazy { HistoryRepository(database.conversionHistoryDao()) }
     val presetRepository by lazy { PresetRepository(database.presetDao()) }
@@ -424,29 +570,33 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             DocHubTheme {
-                var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
-                Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    bottomBar = {
-                        NavigationBar {
-                            bottomNavItems.forEach { screen ->
-                                NavigationBarItem(
-                                    selected = currentScreen == screen,
-                                    onClick = { currentScreen = screen },
-                                    icon = { Icon(screen.icon, contentDescription = screen.title) },
-                                    label = { Text(screen.title) }
-                                )
+                val isUnlocked by viewModel.isUnlocked.collectAsState()
+                if (!isUnlocked) {
+                    LockScreen(viewModel = viewModel)
+                } else {
+                    var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        bottomBar = {
+                            NavigationBar {
+                                bottomNavItems.forEach { screen ->
+                                    NavigationBarItem(
+                                        selected = currentScreen == screen,
+                                        onClick = { currentScreen = screen },
+                                        icon = { Icon(screen.icon, contentDescription = screen.title) },
+                                        label = { Text(screen.title) }
+                                    )
+                                }
                             }
                         }
-                    }
-                ) { innerPadding ->
-                    Surface(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-                        when (currentScreen) {
-                            Screen.Home -> HomeScreen(viewModel, onNavigateToDocuments = { currentScreen = Screen.Documents }, onNavigateToPrepare = { currentScreen = Screen.Prepare })
-                            Screen.Documents -> DocumentsScreen(viewModel, onPrepareDocument = { doc -> viewModel.selectedDocument.value = doc; currentScreen = Screen.Prepare })
-                            Screen.Prepare -> PrepareScreen(viewModel)
-                            Screen.History -> HistoryScreen(viewModel)
-                            Screen.Settings -> SettingsScreen(viewModel)
+                    ) { innerPadding ->
+                        Surface(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                            when (currentScreen) {
+                                Screen.Home -> HomeScreen(viewModel, onNavigateToDocuments = { currentScreen = Screen.Documents }, onNavigateToPrepare = { currentScreen = Screen.Prepare })
+                                Screen.Documents -> DocumentsScreen(viewModel, onPrepareDocument = { doc -> viewModel.selectedDocument.value = doc; currentScreen = Screen.Prepare })
+                                Screen.Prepare -> PrepareScreen(viewModel)
+                                Screen.Settings -> SettingsScreen(viewModel)
+                            }
                         }
                     }
                 }

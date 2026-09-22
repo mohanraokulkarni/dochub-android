@@ -1,4 +1,4 @@
-import { StoredDocument, Preset, ConversionRecord } from '../types';
+import { StoredDocument, Preset, ConversionRecord, AppLockMode } from '../types';
 
 const DB_NAME = 'DocHubOfflineDB';
 const DB_VERSION = 1;
@@ -61,7 +61,7 @@ export const INITIAL_PRESETS: Preset[] = [
     dpi: 150,
     maxFileSizeBytes: 500 * 1024, // 500 KB
     quality: 80,
-    notes: 'Standard A4 PDF with high text clarity: ≤500 KB',
+    notes: 'Standard A4 compressed PDF for portal upload',
     isSystem: true,
   },
 ];
@@ -69,18 +69,27 @@ export const INITIAL_PRESETS: Preset[] = [
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
+
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+
       if (!db.objectStoreNames.contains('documents')) {
-        db.createObjectStore('documents', { keyPath: 'id' });
+        const docStore = db.createObjectStore('documents', { keyPath: 'id' });
+        docStore.createIndex('category', 'category', { unique: false });
+        docStore.createIndex('displayName', 'displayName', { unique: false });
+        docStore.createIndex('createdAt', 'createdAt', { unique: false });
       }
+
       if (!db.objectStoreNames.contains('presets')) {
         db.createObjectStore('presets', { keyPath: 'id' });
       }
+
       if (!db.objectStoreNames.contains('history')) {
-        db.createObjectStore('history', { keyPath: 'id' });
+        const histStore = db.createObjectStore('history', { keyPath: 'id' });
+        histStore.createIndex('createdAt', 'createdAt', { unique: false });
       }
     };
+
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
@@ -120,6 +129,25 @@ export async function deleteDocument(id: string): Promise<void> {
     const req = store.delete(id);
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
+  });
+}
+
+export async function renameStoredDocument(id: string, newDisplayName: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('documents', 'readwrite');
+    const store = tx.objectStore('documents');
+    const getReq = store.get(id);
+    getReq.onsuccess = () => {
+      const doc = getReq.result as StoredDocument | undefined;
+      if (doc) {
+        doc.displayName = newDisplayName.trim();
+        doc.updatedAt = Date.now();
+        store.put(doc);
+      }
+      resolve();
+    };
+    getReq.onerror = () => reject(getReq.error);
   });
 }
 
@@ -176,4 +204,30 @@ export async function clearAllHistory(): Promise<void> {
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
   });
+}
+
+// User View Preferences
+export function getDefaultViewMode(): 'grid' | 'list' {
+  return (localStorage.getItem('dochub_view_mode') as 'grid' | 'list') || 'grid';
+}
+
+export function setDefaultViewMode(mode: 'grid' | 'list'): void {
+  localStorage.setItem('dochub_view_mode', mode);
+}
+
+// App Lock Preferences
+export function getAppLockMode(): AppLockMode {
+  return (localStorage.getItem('dochub_app_lock_mode') as AppLockMode) || 'OFF';
+}
+
+export function setAppLockMode(mode: AppLockMode): void {
+  localStorage.setItem('dochub_app_lock_mode', mode);
+}
+
+export function getStoredPin(): string | null {
+  return localStorage.getItem('dochub_app_lock_pin');
+}
+
+export function setStoredPin(pin: string): void {
+  localStorage.setItem('dochub_app_lock_pin', pin);
 }

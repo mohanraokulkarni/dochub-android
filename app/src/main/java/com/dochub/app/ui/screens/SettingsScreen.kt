@@ -12,19 +12,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dochub.app.security.AppLockManager
 import com.dochub.app.ui.viewmodel.DocHubViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(viewModel: DocHubViewModel) {
     val storageBytes by viewModel.storageUsageBytes.collectAsState()
-    val presets by viewModel.allPresets.collectAsState()
+    val documents by viewModel.documents.collectAsState()
+    val isGridView by viewModel.isGridView.collectAsState()
+    val defaultCategory by viewModel.defaultCategory.collectAsState()
+    val lockMode by viewModel.lockMode.collectAsState()
+    val statusMessage by viewModel.statusMessage.collectAsState()
+
+    var showPinDialog by remember { mutableStateOf(false) }
+    var pinInputValue by remember { mutableStateOf("") }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings & Storage", fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                title = { Text("Settings", fontWeight = FontWeight.Bold) }
             )
         }
     ) { padding ->
@@ -35,94 +42,17 @@ fun SettingsScreen(viewModel: DocHubViewModel) {
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Storage Information Card
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Storage, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(12.dp))
-                            Text("Local Device Storage", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        }
-
-                        Spacer(Modifier.height(12.dp))
-                        val kb = storageBytes / 1024.0
-                        val mb = kb / 1024.0
-                        val displaySize = if (mb >= 1.0) String.format("%.2f MB", mb) else String.format("%.1f KB", kb)
-
-                        Text("Total DocHub Storage Used: $displaySize", fontWeight = FontWeight.SemiBold)
+            // Status banner if present
+            statusMessage?.let { msg ->
+                item {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         Text(
-                            "Includes private documents, conversions, and thumbnails.",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        Spacer(Modifier.height(12.dp))
-                        OutlinedButton(
-                            onClick = { viewModel.clearTemporaryFiles() },
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Icon(Icons.Default.CleaningServices, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Clear Temporary Cache")
-                        }
-                    }
-                }
-            }
-
-            // Presets Summary Card
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(12.dp))
-                            Text("Configured Presets (${presets.size})", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        presets.forEach { p ->
-                            Text(
-                                "• ${p.name}: ${p.outputFormat}, ${p.width}x${p.height}${p.widthUnit}, max ${p.maxFileSizeBytes / 1024} KB",
-                                fontSize = 13.sp,
-                                modifier = Modifier.padding(vertical = 2.dp)
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Absolute Offline & Privacy Guarantee Card
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.Security,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Text(
-                                "Privacy & Offline Guarantee",
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "\"Your documents stay on this device.\"\n\nDocHub operates with zero internet requirement, zero cloud storage, zero tracking, and zero remote APIs. All image decoding, resizing, compression, and PDF generation execute strictly inside the Android app private sandbox.",
+                            text = msg,
+                            modifier = Modifier.padding(12.dp),
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
@@ -130,23 +60,228 @@ fun SettingsScreen(viewModel: DocHubViewModel) {
                 }
             }
 
-            // About & Architecture
+            // 1. Documents Preferences
+            item {
+                Text("Documents", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("About DocHub", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        Spacer(Modifier.height(4.dp))
-                        Text("Version 1.0.0 (Native Android)", fontSize = 13.sp)
-                        Text("Architecture: Jetpack Compose + Room + Coroutines + Android SAF", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Target SDK: 35 (Android 15+ compatible)", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Default View", fontWeight = FontWeight.SemiBold)
+                                Text("Preferred layout for document browser", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Row {
+                                FilterChip(
+                                    selected = isGridView,
+                                    onClick = { viewModel.setGridView(true) },
+                                    label = { Text("Grid") }
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                FilterChip(
+                                    selected = !isGridView,
+                                    onClick = { viewModel.setGridView(false) },
+                                    label = { Text("List") }
+                                )
+                            }
+                        }
+
+                        Divider()
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Default Category", fontWeight = FontWeight.SemiBold)
+                                Text("Assigned when importing new items", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text(defaultCategory, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
                     }
                 }
             }
 
-            item { Spacer(Modifier.height(16.dp)) }
+            // 2. Privacy & Security
+            item {
+                Text("Privacy & Security", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Encryption at Rest", fontWeight = FontWeight.SemiBold)
+                                Text("Hardware Keystore AES-256-GCM", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    "Active",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+
+                        Divider()
+
+                        Column {
+                            Text("App Lock", fontWeight = FontWeight.SemiBold)
+                            Text("Protect sensitive documents upon opening", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(
+                                    selected = lockMode == AppLockManager.MODE_OFF,
+                                    onClick = { viewModel.setLockOff() },
+                                    label = { Text("Off") }
+                                )
+                                FilterChip(
+                                    selected = lockMode == AppLockManager.MODE_PIN,
+                                    onClick = { showPinDialog = true },
+                                    label = { Text("PIN") }
+                                )
+                                FilterChip(
+                                    selected = lockMode == AppLockManager.MODE_BIOMETRIC,
+                                    onClick = { viewModel.setBiometricLock() },
+                                    label = { Text("Biometric") }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. Storage Information
+            item {
+                Text("Storage", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        val mb = storageBytes / (1024.0 * 1024.0)
+                        val displaySize = if (mb >= 1.0) String.format("%.2f MB", mb) else String.format("%.1f KB", storageBytes / 1024.0)
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Documents Stored", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${documents.size}", fontWeight = FontWeight.Bold)
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Device Storage Used", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(displaySize, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(Modifier.height(4.dp))
+
+                        OutlinedButton(
+                            onClick = { viewModel.clearTemporaryFiles() },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Default.CleaningServices, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Clear Temporary Files")
+                        }
+                    }
+                }
+            }
+
+            // 4. About & Privacy Statement
+            item {
+                Text("About", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("DocHub", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("Version 1.0.0 (Offline Edition)", fontSize = 13.sp)
+                        Text(
+                            "DocHub is an offline personal document manager. Your files never leave your device. Zero analytics, zero advertising, zero remote storage.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            item { Spacer(Modifier.height(24.dp)) }
         }
+    }
+
+    // PIN Setup Dialog
+    if (showPinDialog) {
+        AlertDialog(
+            onDismissRequest = { showPinDialog = false },
+            title = { Text("Set 4-6 Digit PIN") },
+            text = {
+                OutlinedTextField(
+                    value = pinInputValue,
+                    onValueChange = { if (it.length <= 6) pinInputValue = it },
+                    label = { Text("PIN") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (pinInputValue.length >= 4) {
+                            viewModel.setPinLock(pinInputValue)
+                            showPinDialog = false
+                            pinInputValue = ""
+                        }
+                    },
+                    enabled = pinInputValue.length >= 4
+                ) {
+                    Text("Save PIN")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPinDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }

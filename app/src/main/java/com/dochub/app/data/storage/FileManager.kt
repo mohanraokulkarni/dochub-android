@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
+import com.dochub.app.security.CryptoManager
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -14,6 +15,8 @@ import java.util.Date
 import java.util.Locale
 
 class FileManager(private val context: Context) {
+
+    val cryptoManager = CryptoManager()
 
     private val baseDir: File = File(context.filesDir, "DocHub")
     val documentsDir: File = File(baseDir, "documents")
@@ -36,12 +39,13 @@ class FileManager(private val context: Context) {
         val localPath: String,
         val mimeType: String,
         val extension: String,
-        val sizeBytes: Long
+        val sizeBytes: Long,
+        val encrypted: Boolean = true
     )
 
     /**
-     * Safely imports a document from a content:// URI into DocHub private storage.
-     * Guarantees destination existence, >0 bytes verification, and anti-path-traversal.
+     * Safely imports a document from a content:// URI into DocHub private storage
+     * with hardware-backed AES-256-GCM encryption at rest.
      */
     fun importFromUri(contentResolver: ContentResolver, uri: Uri): ImportedFileInfo {
         var originalName = "document"
@@ -69,14 +73,12 @@ class FileManager(private val context: Context) {
         // Generate collision-free destination file in DocHub/documents
         val destinationFile = getUniqueFile(documentsDir, safeName)
 
-        // Copy streams safely
+        // Encrypt input stream directly to destination file using AES-256-GCM
         val inputStream: InputStream = contentResolver.openInputStream(uri)
             ?: throw IllegalStateException("Cannot open input stream for URI: $uri")
 
         inputStream.use { input ->
-            FileOutputStream(destinationFile).use { output ->
-                input.copyTo(output)
-            }
+            cryptoManager.encryptStream(input, destinationFile)
         }
 
         // Verify destination exists and has bytes
@@ -94,8 +96,100 @@ class FileManager(private val context: Context) {
             localPath = destinationFile.absolutePath,
             mimeType = mimeType,
             extension = extension.lowercase(Locale.ROOT),
-            sizeBytes = finalSize
+            sizeBytes = finalSize,
+            encrypted = true
         )
+    }
+
+    /**
+     * Imports a generated file (e.g. from conversion or image editor) into encrypted storage.
+     */
+    fun importLocalFileAsEncrypted(sourceFile: File, displayName: String, extension: String, mimeType: String): ImportedFileInfo {
+        val safeName = sanitizeFileName("$displayName.$extension")
+        val destinationFile = getUniqueFile(documentsDir, safeName)
+
+        cryptoManager.encryptFile(sourceFile, destinationFile)
+
+        if (!destinationFile.exists() || destinationFile.length() <= 0L) {
+            destinationFile.delete()
+            throw IllegalStateException("Saving copy failed: destination file is empty")
+        }
+
+        return ImportedFileInfo(
+            originalName = safeName,
+            displayName = displayName,
+            localPath = destinationFile.absolutePath,
+            mimeType = mimeType,
+            extension = extension.lowercase(Locale.ROOT),
+            sizeBytes = destinationFile.length(),
+            encrypted = true
+        )
+    }
+
+    /**
+     * Creates a temporary decrypted copy for operations that require a seekable local File
+     * (e.g. Android's native PdfRenderer which requires ParcelFileDescriptor).
+     * Must be deleted immediately after use.
+     */
+    fun createTempDecryptedCopy(file: File): File {
+        val tempFile = createTempFile("decrypted_view", ".${file.extension}")
+        cryptoManager.decryptFile(file, tempFile)
+        return tempFile
+    }
+
+    /**
+     * Opens an InputStream, automatically decrypting in memory if the file is encrypted.
+     */
+    fun openDecryptedStream(file: File): InputStream {
+        return cryptoManager.openDecryptedStream(file)
+    }
+
+    /**
+     * Exports an encrypted document to a user-selected SAF Uri.
+     * Decrypts directly into the target output stream without creating unneeded disk files.
+     */
+    fun exportToUri(contentResolver: ContentResolver, sourceFile: File, targetUri: Uri) {
+        val outputStream = contentResolver.openOutputStream(targetUri)
+            ?: throw IllegalStateException("Cannot open output stream for export target")
+
+        outputStream.use { out ->
+            cryptoManager.openDecryptedStream(sourceFile).use { inStream ->
+                inStream.copyTo(out)
+            }
+        }
+    }
+
+    /**
+     * Safely renames a document file on disk preserving extension and encryption state.
+     */
+    fun renameDocumentFile(file: File, newDisplayName: String): File {
+        val safeBase = sanitizeFileName(newDisplayName)
+        val ext = file.extension
+        val newFileName = if (ext.isNotEmpty()) "$safeBase.$ext" else safeBase
+        val targetFile = getUniqueFile(documentsDir, newFileName)
+        val success = file.renameTo(targetFile)
+        if (!success) {
+            // Fallback copy + delete
+            file.copyTo(targetFile, overwrite = true)
+            file.delete()
+        }
+        return targetFile
+    }
+
+    /**
+     * Safely deletes a document file from storage.
+     */
+    fun deleteFile(path: String): Boolean {
+        return try {
+            val file = File(path)
+            if (file.exists()) {
+                file.delete()
+            } else {
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     /**
@@ -173,6 +267,7 @@ class FileManager(private val context: Context) {
             ?: when (extension.lowercase(Locale.ROOT)) {
                 "jpg", "jpeg" -> "image/jpeg"
                 "png" -> "image/png"
+                "webp" -> "image/webp"
                 "pdf" -> "application/pdf"
                 else -> "application/octet-stream"
             }

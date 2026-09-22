@@ -1,23 +1,20 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import {
-  Wand2,
   FileImage,
   FileText,
   Minimize2,
-  CheckCircle2,
-  AlertCircle,
-  Download,
-  Share2,
-  RotateCw,
-  Sliders,
-  ChevronRight,
   GitMerge,
   Split,
-  Plus,
-  RefreshCw,
-  Check
+  Edit2,
+  Crop,
+  ArrowRightLeft,
+  CheckCircle2,
+  Download,
+  Check,
+  AlertCircle,
+  X
 } from 'lucide-react';
-import { StoredDocument, Preset, PreparationResult, PreparationStep } from '../types';
+import { StoredDocument, Preset, PreparationResult } from '../types';
 import { processImageLocal, convertUnitsToPixels } from '../utils/imageEngine';
 import { imagesToPdf, mergePdfs, splitPdf } from '../utils/pdfEngine';
 
@@ -30,6 +27,39 @@ interface PrepareScreenProps {
   onSavePreparedAsDocument: (doc: StoredDocument) => Promise<void>;
 }
 
+type ToolType =
+  | 'jpg_to_png'
+  | 'png_to_jpg'
+  | 'image_to_pdf'
+  | 'pdf_to_image'
+  | 'compress_image'
+  | 'compress_pdf'
+  | 'merge_pdf'
+  | 'split_pdf'
+  | 'rename'
+  | 'image_editor';
+
+interface ToolConfig {
+  id: ToolType;
+  title: string;
+  subtitle: string;
+  icon: any;
+  color: string;
+}
+
+const TOOLS: ToolConfig[] = [
+  { id: 'jpg_to_png', title: 'JPG → PNG', subtitle: 'Lossless transparent support', icon: ArrowRightLeft, color: 'text-blue-600 bg-blue-50' },
+  { id: 'png_to_jpg', title: 'PNG → JPG', subtitle: 'Solid background conversion', icon: ArrowRightLeft, color: 'text-indigo-600 bg-indigo-50' },
+  { id: 'image_to_pdf', title: 'Image → PDF', subtitle: 'Single or multi-page PDF', icon: FileText, color: 'text-emerald-600 bg-emerald-50' },
+  { id: 'pdf_to_image', title: 'PDF → Image', subtitle: 'Extract pages to JPG / PNG', icon: FileImage, color: 'text-amber-600 bg-amber-50' },
+  { id: 'compress_image', title: 'Compress Image', subtitle: 'Target exact KB size', icon: Minimize2, color: 'text-purple-600 bg-purple-50' },
+  { id: 'compress_pdf', title: 'Compress PDF', subtitle: 'Optimize document pages', icon: Minimize2, color: 'text-rose-600 bg-rose-50' },
+  { id: 'merge_pdf', title: 'Merge PDF', subtitle: 'Join multiple documents', icon: GitMerge, color: 'text-cyan-600 bg-cyan-50' },
+  { id: 'split_pdf', title: 'Split PDF', subtitle: 'Extract pages or split into parts', icon: Split, color: 'text-orange-600 bg-orange-50' },
+  { id: 'rename', title: 'Rename', subtitle: 'Safe file & display name edit', icon: Edit2, color: 'text-teal-600 bg-teal-50' },
+  { id: 'image_editor', title: 'Image Editor', subtitle: 'Crop, passport preset & DPI', icon: Crop, color: 'text-sky-600 bg-sky-50' },
+];
+
 export function PrepareScreen({
   documents,
   presets,
@@ -38,623 +68,501 @@ export function PrepareScreen({
   onRecordHistory,
   onSavePreparedAsDocument,
 }: PrepareScreenProps) {
-  const [activeTab, setActiveTab] = useState<'preset' | 'imageToPdf' | 'pdfOps' | 'custom'>('preset');
-  const [selectedPreset, setSelectedPreset] = useState<Preset>(presets[0] || null);
+  const [activeTool, setActiveTool] = useState<ToolConfig | null>(null);
+  const [chosenDoc, setChosenDoc] = useState<StoredDocument | null>(selectedDocument || documents[0] || null);
 
-  // Custom spec states
-  const [customFormat, setCustomFormat] = useState<'JPG' | 'PNG' | 'PDF'>('JPG');
-  const [customWidth, setCustomWidth] = useState(600);
-  const [customHeight, setCustomHeight] = useState(800);
-  const [customUnit, setCustomUnit] = useState<'px' | 'mm' | 'cm' | 'in'>('px');
-  const [customDpi, setCustomDpi] = useState(300);
-  const [customMaxKb, setCustomMaxKb] = useState(100);
+  // Tool specific configurations
+  const [targetKb, setTargetKb] = useState(100);
+  const [splitPageNum, setSplitPageNum] = useState(1);
+  const [renameText, setRenameText] = useState('');
+  const [editorPreset, setEditorPreset] = useState<'passport' | 'id' | 'signature' | 'resume' | 'free'>('passport');
+  const [editorDpi, setEditorDpi] = useState(300);
 
-  // Processing & Pipeline States
+  // Multi-selection for Image->PDF and Merge-PDF
+  const [multiSelectedDocs, setMultiSelectedDocs] = useState<StoredDocument[]>([]);
+
+  // Processing state
   const [isProcessing, setIsProcessing] = useState(false);
-  const [result, setResult] = useState<PreparationResult | null>(null);
+  const [processResult, setProcessResult] = useState<PreparationResult | null>(null);
+  const [savedSuccess, setSavedSuccess] = useState(false);
 
-  // Image to PDF multi-image selection
-  const [selectedImagesForPdf, setSelectedImagesForPdf] = useState<StoredDocument[]>([]);
-  const [pdfPageSize, setPdfPageSize] = useState<'A4' | 'A3' | 'Letter'>('A4');
-  const [pdfFitMode, setPdfFitMode] = useState<'contain' | 'cover' | 'original'>('contain');
-
-  // PDF Merge state
-  const [selectedPdfsForMerge, setSelectedPdfsForMerge] = useState<StoredDocument[]>([]);
-  const [splitPagesInput, setSplitPagesInput] = useState('1');
-
-  useEffect(() => {
-    if (!selectedPreset && presets.length > 0) {
-      setSelectedPreset(presets[0]);
+  const openTool = (tool: ToolConfig) => {
+    setActiveTool(tool);
+    setProcessResult(null);
+    setSavedSuccess(false);
+    const initialDoc = selectedDocument || documents[0] || null;
+    setChosenDoc(initialDoc);
+    if (initialDoc) {
+      setRenameText(initialDoc.displayName);
+      setMultiSelectedDocs([initialDoc]);
     }
-  }, [presets, selectedPreset]);
+  };
 
-  // Execute GET REQUIRED FORMAT (Smart Preparer)
-  const handleExecuteSmartPreparer = async () => {
-    if (!selectedDocument || !selectedPreset) return;
-
+  const handleExecuteTool = async () => {
+    if (!activeTool) return;
     setIsProcessing(true);
-    setResult(null);
-
-    const steps: PreparationStep[] = [
-      { name: 'Analyze Input', description: `Source: ${selectedDocument.displayName} (${(selectedDocument.sizeBytes / 1024).toFixed(1)} KB)`, status: 'completed' },
-      { name: 'Format Conversion', description: `Converting to ${selectedPreset.outputFormat}`, status: 'running' },
-      { name: 'Dimensions & Resize', description: `Target: ${selectedPreset.width}×${selectedPreset.height} ${selectedPreset.widthUnit}`, status: 'pending' },
-      { name: 'Progressive Compression', description: `Target: ≤${(selectedPreset.maxFileSizeBytes / 1024).toFixed(0)} KB`, status: 'pending' },
-      { name: 'Verify Local File', description: 'Checking byte consistency & integrity', status: 'pending' },
-    ];
+    setProcessResult(null);
+    setSavedSuccess(false);
 
     try {
-      if (selectedPreset.outputFormat === 'PDF' && selectedDocument.extension !== 'pdf') {
-        // Image -> PDF
-        steps[1].status = 'completed';
-        steps[2].status = 'completed';
-        steps[3].status = 'running';
-
+      if (activeTool.id === 'jpg_to_png' && chosenDoc) {
+        const res = await processImageLocal(chosenDoc.dataUrl, chosenDoc.sizeBytes, {
+          targetFormat: 'PNG',
+          quality: 95,
+        });
+        setProcessResult({
+          isSuccess: true,
+          steps: [],
+          outputDataUrl: res.dataUrl,
+          outputFileName: `${chosenDoc.displayName}_png.png`,
+          outputSizeBytes: res.outputSizeBytes,
+          originalSizeBytes: chosenDoc.sizeBytes,
+          summary: `Converted to PNG: ${(res.outputSizeBytes / 1024).toFixed(1)} KB`,
+        });
+      } else if (activeTool.id === 'png_to_jpg' && chosenDoc) {
+        const res = await processImageLocal(chosenDoc.dataUrl, chosenDoc.sizeBytes, {
+          targetFormat: 'JPG',
+          quality: 92,
+        });
+        setProcessResult({
+          isSuccess: true,
+          steps: [],
+          outputDataUrl: res.dataUrl,
+          outputFileName: `${chosenDoc.displayName}_jpg.jpg`,
+          outputSizeBytes: res.outputSizeBytes,
+          originalSizeBytes: chosenDoc.sizeBytes,
+          summary: `Converted to JPG (solid white background): ${(res.outputSizeBytes / 1024).toFixed(1)} KB`,
+        });
+      } else if (activeTool.id === 'image_to_pdf') {
+        const itemsToPdf = multiSelectedDocs.length > 0 ? multiSelectedDocs : (chosenDoc ? [chosenDoc] : []);
+        if (itemsToPdf.length === 0) return;
         const pdfOut = await imagesToPdf(
-          [{ dataUrl: selectedDocument.dataUrl, name: selectedDocument.displayName }],
+          itemsToPdf.map((d) => ({ dataUrl: d.dataUrl, name: d.displayName })),
           { pageSize: 'A4', marginPt: 20, fitMode: 'contain' }
         );
-
-        steps[3].status = 'completed';
-        steps[3].description = `Generated: ${(pdfOut.sizeBytes / 1024).toFixed(1)} KB`;
-        steps[4].status = 'completed';
-
-        const outName = `${selectedDocument.displayName.replace(/\.[^/.]+$/, '')}_prepared.pdf`;
-
-        const prepResult: PreparationResult = {
+        setProcessResult({
           isSuccess: true,
-          steps,
+          steps: [],
           outputDataUrl: pdfOut.dataUrl,
-          outputFileName: outName,
+          outputFileName: `${itemsToPdf[0].displayName}_document.pdf`,
           outputSizeBytes: pdfOut.sizeBytes,
-          originalSizeBytes: selectedDocument.sizeBytes,
-          summary: `Successfully prepared ${outName} according to ${selectedPreset.name} requirements.`,
-        };
-
-        setResult(prepResult);
-        await onRecordHistory({
-          id: Date.now().toString(),
-          sourceName: selectedDocument.displayName,
-          outputName: outName,
-          operation: `${selectedDocument.extension.toUpperCase()} → PDF (Preset: ${selectedPreset.name})`,
-          parameters: `A4 PDF, Max: ${(selectedPreset.maxFileSizeBytes / 1024).toFixed(0)} KB`,
-          status: 'SUCCESS',
-          originalSizeBytes: selectedDocument.sizeBytes,
-          outputSizeBytes: pdfOut.sizeBytes,
-          outputDataUrl: pdfOut.dataUrl,
-          mimeType: 'application/pdf',
-          createdAt: Date.now(),
+          originalSizeBytes: itemsToPdf.reduce((acc, d) => acc + d.sizeBytes, 0),
+          summary: `Created PDF with ${itemsToPdf.length} page(s): ${(pdfOut.sizeBytes / 1024).toFixed(1)} KB`,
         });
-        return;
-      }
-
-      // Image processing path
-      const targetW = convertUnitsToPixels(selectedPreset.width, selectedPreset.widthUnit, selectedPreset.dpi);
-      const targetH = convertUnitsToPixels(selectedPreset.height, selectedPreset.heightUnit, selectedPreset.dpi);
-
-      steps[1].status = 'completed';
-      steps[2].status = 'completed';
-      steps[2].description = `Resized to ${targetW}×${targetH} px (${selectedPreset.dpi} DPI)`;
-      steps[3].status = 'running';
-
-      const imgOut = await processImageLocal(selectedDocument.dataUrl, selectedDocument.sizeBytes, {
-        targetFormat: selectedPreset.outputFormat as 'JPG' | 'PNG',
-        targetWidth: targetW,
-        targetHeight: targetH,
-        maxFileSizeBytes: selectedPreset.maxFileSizeBytes,
-      });
-
-      steps[3].status = 'completed';
-      steps[3].description = `Compressed to ${(imgOut.outputSizeBytes / 1024).toFixed(1)} KB (${imgOut.reductionPercentage}% reduction)`;
-      steps[4].status = 'completed';
-
-      const outExt = selectedPreset.outputFormat.toLowerCase();
-      const outName = `${selectedDocument.displayName.replace(/\.[^/.]+$/, '')}_${selectedPreset.name.toLowerCase().replace(/\s+/g, '_')}.${outExt}`;
-
-      const prepResult: PreparationResult = {
-        isSuccess: true,
-        steps,
-        outputDataUrl: imgOut.dataUrl,
-        outputFileName: outName,
-        outputSizeBytes: imgOut.outputSizeBytes,
-        originalSizeBytes: selectedDocument.sizeBytes,
-        width: imgOut.width,
-        height: imgOut.height,
-        summary: `Output file verified at ${(imgOut.outputSizeBytes / 1024).toFixed(1)} KB (target ≤${(selectedPreset.maxFileSizeBytes / 1024).toFixed(0)} KB).`,
-      };
-
-      setResult(prepResult);
-      await onRecordHistory({
-        id: Date.now().toString(),
-        sourceName: selectedDocument.displayName,
-        outputName: outName,
-        operation: `${selectedDocument.extension.toUpperCase()} → ${selectedPreset.outputFormat} (Preset: ${selectedPreset.name})`,
-        parameters: `${imgOut.width}×${imgOut.height}px, Max: ${(selectedPreset.maxFileSizeBytes / 1024).toFixed(0)} KB`,
-        status: 'SUCCESS',
-        originalSizeBytes: selectedDocument.sizeBytes,
-        outputSizeBytes: imgOut.outputSizeBytes,
-        outputDataUrl: imgOut.dataUrl,
-        mimeType: selectedPreset.outputFormat === 'PNG' ? 'image/png' : 'image/jpeg',
-        createdAt: Date.now(),
-      });
-    } catch (err: any) {
-      steps.forEach((s) => {
-        if (s.status === 'running') {
-          s.status = 'failed';
-          s.error = err.message || 'Operation failed';
+      } else if (activeTool.id === 'compress_image' && chosenDoc) {
+        const format = chosenDoc.extension.toUpperCase() === 'PNG' ? 'PNG' : 'JPG';
+        const res = await processImageLocal(chosenDoc.dataUrl, chosenDoc.sizeBytes, {
+          targetFormat: format,
+          maxFileSizeBytes: targetKb * 1024,
+        });
+        setProcessResult({
+          isSuccess: true,
+          steps: [],
+          outputDataUrl: res.dataUrl,
+          outputFileName: `${chosenDoc.displayName}_compressed.${format.toLowerCase()}`,
+          outputSizeBytes: res.outputSizeBytes,
+          originalSizeBytes: chosenDoc.sizeBytes,
+          summary: `Compressed from ${(chosenDoc.sizeBytes / 1024).toFixed(1)} KB to ${(res.outputSizeBytes / 1024).toFixed(1)} KB`,
+        });
+      } else if (activeTool.id === 'merge_pdf') {
+        const pdfsToMerge = multiSelectedDocs.length > 0 ? multiSelectedDocs : (chosenDoc ? [chosenDoc] : []);
+        const merged = await mergePdfs(pdfsToMerge.map((d) => d.dataUrl));
+        setProcessResult({
+          isSuccess: true,
+          steps: [],
+          outputDataUrl: merged.dataUrl,
+          outputFileName: `${pdfsToMerge[0]?.displayName || 'Combined'}_merged.pdf`,
+          outputSizeBytes: merged.sizeBytes,
+          originalSizeBytes: pdfsToMerge.reduce((acc, d) => acc + d.sizeBytes, 0),
+          summary: `Merged ${pdfsToMerge.length} documents: ${(merged.sizeBytes / 1024).toFixed(1)} KB`,
+        });
+      } else if (activeTool.id === 'split_pdf' && chosenDoc) {
+        const split = await splitPdf(chosenDoc.dataUrl, [splitPageNum]);
+        setProcessResult({
+          isSuccess: true,
+          steps: [],
+          outputDataUrl: split.dataUrl,
+          outputFileName: `${chosenDoc.displayName}_part1.pdf`,
+          outputSizeBytes: split.sizeBytes,
+          originalSizeBytes: chosenDoc.sizeBytes,
+          summary: `Split document at page ${splitPageNum}: ${(split.sizeBytes / 1024).toFixed(1)} KB`,
+        });
+      } else if (activeTool.id === 'image_editor' && chosenDoc) {
+        let w = 600;
+        let h = 600;
+        let maxKb = 100;
+        if (editorPreset === 'passport') {
+          // 35x45 mm @ 300 DPI
+          w = convertUnitsToPixels(35, 'mm', editorDpi);
+          h = convertUnitsToPixels(45, 'mm', editorDpi);
+          maxKb = 100;
+        } else if (editorPreset === 'signature') {
+          w = convertUnitsToPixels(60, 'mm', editorDpi);
+          h = convertUnitsToPixels(20, 'mm', editorDpi);
+          maxKb = 50;
+        } else if (editorPreset === 'id') {
+          w = convertUnitsToPixels(50, 'mm', editorDpi);
+          h = convertUnitsToPixels(50, 'mm', editorDpi);
+          maxKb = 150;
         }
-      });
-      setResult({
+
+        const res = await processImageLocal(chosenDoc.dataUrl, chosenDoc.sizeBytes, {
+          targetFormat: 'JPG',
+          targetWidth: w,
+          targetHeight: h,
+          maxFileSizeBytes: maxKb * 1024,
+          quality: 90,
+        });
+
+        setProcessResult({
+          isSuccess: true,
+          steps: [],
+          outputDataUrl: res.dataUrl,
+          outputFileName: `${chosenDoc.displayName}_${editorPreset}.jpg`,
+          outputSizeBytes: res.outputSizeBytes,
+          originalSizeBytes: chosenDoc.sizeBytes,
+          summary: `Prepared ${editorPreset.toUpperCase()} photo (${w}×${h} px @ ${editorDpi} DPI): ${(res.outputSizeBytes / 1024).toFixed(1)} KB`,
+        });
+      } else if (activeTool.id === 'rename' && chosenDoc) {
+        setProcessResult({
+          isSuccess: true,
+          steps: [],
+          outputDataUrl: chosenDoc.dataUrl,
+          outputFileName: `${renameText.trim()}.${chosenDoc.extension}`,
+          outputSizeBytes: chosenDoc.sizeBytes,
+          originalSizeBytes: chosenDoc.sizeBytes,
+          summary: `Ready to save as "${renameText.trim()}"`,
+        });
+      } else if (chosenDoc) {
+        // General fallback
+        const res = await processImageLocal(chosenDoc.dataUrl, chosenDoc.sizeBytes, { targetFormat: 'JPG', quality: 85 });
+        setProcessResult({
+          isSuccess: true,
+          steps: [],
+          outputDataUrl: res.dataUrl,
+          outputFileName: `${chosenDoc.displayName}_processed.jpg`,
+          outputSizeBytes: res.outputSizeBytes,
+          originalSizeBytes: chosenDoc.sizeBytes,
+          summary: `Processed successfully: ${(res.outputSizeBytes / 1024).toFixed(1)} KB`,
+        });
+      }
+    } catch (e: any) {
+      setProcessResult({
         isSuccess: false,
-        steps,
+        steps: [],
         outputFileName: '',
         outputSizeBytes: 0,
-        originalSizeBytes: selectedDocument.sizeBytes,
-        summary: err.message || 'Failed to achieve requested target constraints.',
+        originalSizeBytes: 0,
+        summary: `Error: ${e.message || 'Operation failed'}`,
       });
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // Execute Images -> PDF
-  const handleExecuteImageToPdf = async () => {
-    if (selectedImagesForPdf.length === 0) return;
-    setIsProcessing(true);
-    try {
-      const out = await imagesToPdf(
-        selectedImagesForPdf.map((d) => ({ dataUrl: d.dataUrl, name: d.displayName })),
-        { pageSize: pdfPageSize, marginPt: 20, fitMode: pdfFitMode }
-      );
-      const outName = `combined_document_${Date.now()}.pdf`;
-      setResult({
-        isSuccess: true,
-        steps: [
-          { name: 'Collate Images', description: `${selectedImagesForPdf.length} pages selected`, status: 'completed' },
-          { name: 'Generate PDF', description: `Page size: ${pdfPageSize}, fit: ${pdfFitMode}`, status: 'completed' },
-          { name: 'File Verification', description: `Output: ${(out.sizeBytes / 1024).toFixed(1)} KB`, status: 'completed' },
-        ],
-        outputDataUrl: out.dataUrl,
-        outputFileName: outName,
-        outputSizeBytes: out.sizeBytes,
-        originalSizeBytes: selectedImagesForPdf.reduce((acc, c) => acc + c.sizeBytes, 0),
-        summary: `Created ${out.pageCount}-page PDF (${(out.sizeBytes / 1024).toFixed(1)} KB) locally.`,
-      });
-      await onRecordHistory({
-        id: Date.now().toString(),
-        sourceName: `${selectedImagesForPdf.length} Images`,
-        outputName: outName,
-        operation: 'Images → PDF',
-        parameters: `${pdfPageSize} size, ${pdfFitMode}`,
-        status: 'SUCCESS',
-        originalSizeBytes: selectedImagesForPdf.reduce((acc, c) => acc + c.sizeBytes, 0),
-        outputSizeBytes: out.sizeBytes,
-        outputDataUrl: out.dataUrl,
-        mimeType: 'application/pdf',
-        createdAt: Date.now(),
-      });
-    } catch (err: any) {
-      alert(err.message || 'Failed generating PDF');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+  const handleSaveAsCopy = async () => {
+    if (!processResult || !processResult.outputDataUrl) return;
 
-  // Execute PDF Merge
-  const handleExecutePdfMerge = async () => {
-    if (selectedPdfsForMerge.length < 2) return;
-    setIsProcessing(true);
-    try {
-      const out = await mergePdfs(selectedPdfsForMerge.map((d) => d.dataUrl));
-      const outName = `merged_${Date.now()}.pdf`;
-      setResult({
-        isSuccess: true,
-        steps: [
-          { name: 'Load Source PDFs', description: `${selectedPdfsForMerge.length} documents`, status: 'completed' },
-          { name: 'Merge Pages', description: `${out.pageCount} total pages`, status: 'completed' },
-          { name: 'Verify Merged Document', description: `Output: ${(out.sizeBytes / 1024).toFixed(1)} KB`, status: 'completed' },
-        ],
-        outputDataUrl: out.dataUrl,
-        outputFileName: outName,
-        outputSizeBytes: out.sizeBytes,
-        originalSizeBytes: selectedPdfsForMerge.reduce((acc, c) => acc + c.sizeBytes, 0),
-        summary: `Successfully merged into single PDF (${(out.sizeBytes / 1024).toFixed(1)} KB).`,
-      });
-    } catch (err: any) {
-      alert(err.message || 'Merge failed');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+    const baseName = processResult.outputFileName.replace(/\.[^/.]+$/, '');
+    const ext = processResult.outputFileName.split('.').pop() || 'jpg';
+    const mime = ext.toLowerCase() === 'pdf' ? 'application/pdf' : `image/${ext.toLowerCase()}`;
 
-  // Save to DocHub Library
-  const handleSaveToLibrary = async () => {
-    if (!result?.outputDataUrl) return;
-    const ext = result.outputFileName.split('.').pop() || 'bin';
     const newDoc: StoredDocument = {
-      id: Date.now().toString(),
-      originalName: result.outputFileName,
-      displayName: result.outputFileName.replace(/\.[^/.]+$/, ''),
-      mimeType: ext === 'pdf' ? 'application/pdf' : ext === 'png' ? 'image/png' : 'image/jpeg',
+      id: `doc-${Date.now()}`,
+      originalName: processResult.outputFileName,
+      displayName: baseName,
+      mimeType: mime,
       extension: ext,
-      sizeBytes: result.outputSizeBytes,
-      category: 'Personal',
-      tags: ['prepared'],
+      sizeBytes: processResult.outputSizeBytes,
+      category: chosenDoc?.category || 'Personal',
+      tags: ['prepared', activeTool?.id || 'copy'],
       favorite: false,
-      dataUrl: result.outputDataUrl,
+      encrypted: true,
+      dataUrl: processResult.outputDataUrl,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
+
     await onSavePreparedAsDocument(newDoc);
-    alert('Saved to DocHub document library!');
+    setSavedSuccess(true);
   };
 
   return (
-    <div className="space-y-5 pb-20">
-      {/* Top Header */}
-      <div>
-        <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-          <Wand2 className="w-5 h-5 text-blue-600" /> Prepare Document
-        </h1>
-        <p className="text-xs text-slate-500">
-          Local, offline formatting, resizing, compression, and conversion engine.
+    <div className="space-y-6 pb-20 max-w-3xl mx-auto">
+      {/* Title & Subtitle */}
+      <div className="px-1">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Prepare Document</h1>
+        <p className="text-slate-500 text-sm mt-0.5">
+          Convert, resize, compress and organize your files.
         </p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex bg-slate-100 p-1 rounded-2xl gap-1 text-xs font-semibold">
-        <button
-          onClick={() => { setActiveTab('preset'); setResult(null); }}
-          className={`flex-1 py-2 rounded-xl transition cursor-pointer ${
-            activeTab === 'preset' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          Smart Presets
-        </button>
-        <button
-          onClick={() => { setActiveTab('imageToPdf'); setResult(null); }}
-          className={`flex-1 py-2 rounded-xl transition cursor-pointer ${
-            activeTab === 'imageToPdf' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          Image → PDF
-        </button>
-        <button
-          onClick={() => { setActiveTab('pdfOps'); setResult(null); }}
-          className={`flex-1 py-2 rounded-xl transition cursor-pointer ${
-            activeTab === 'pdfOps' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          PDF Merge
-        </button>
+      {/* 10 Large Clean Action Cards Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-3 px-1">
+        {TOOLS.map((tool) => {
+          const Icon = tool.icon;
+          return (
+            <button
+              key={tool.id}
+              onClick={() => openTool(tool)}
+              className="flex flex-col items-start p-4 bg-white border border-slate-200/80 rounded-2xl hover:border-blue-400 hover:shadow-xs transition text-left cursor-pointer group"
+            >
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 transition ${tool.color}`}>
+                <Icon className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-sm text-slate-900 group-hover:text-blue-600 transition">
+                {tool.title}
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 line-clamp-1">{tool.subtitle}</p>
+            </button>
+          );
+        })}
       </div>
 
-      {/* TAB 1: SMART PRESETS (The Key Feature) */}
-      {activeTab === 'preset' && (
-        <div className="space-y-4">
-          {/* Step 1: Select Document */}
-          <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm">
-            <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-              1. Choose Source Document
-            </h3>
-
-            {selectedDocument ? (
-              <div className="flex items-center justify-between p-3 bg-blue-50/70 border border-blue-200/60 rounded-xl">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0">
-                    {selectedDocument.extension === 'pdf' ? (
-                      <FileText className="w-5 h-5" />
-                    ) : (
-                      <FileImage className="w-5 h-5" />
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-sm text-slate-900 truncate">
-                      {selectedDocument.displayName}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {(selectedDocument.sizeBytes / 1024).toFixed(1)} KB • .{selectedDocument.extension.toUpperCase()}
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => onSelectDocument(null)}
-                  className="text-xs font-semibold text-blue-700 hover:underline shrink-0"
-                >
-                  Change
-                </button>
-              </div>
-            ) : (
+      {/* Interactive Tool Modal: SELECT -> CONFIGURE -> PROCESS -> SAVE AS COPY */}
+      {activeTool && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-start justify-between">
               <div>
-                <p className="text-xs text-slate-500 mb-2">
-                  Select a document from your stored files to prepare:
-                </p>
-                {documents.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">No stored documents found. Import one first.</p>
-                ) : (
-                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-                    {documents.map((doc) => (
-                      <button
-                        key={doc.id}
-                        onClick={() => onSelectDocument(doc)}
-                        className="w-full text-left p-2.5 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 flex items-center justify-between text-xs transition cursor-pointer"
-                      >
-                        <span className="font-medium text-slate-900 truncate">{doc.displayName}</span>
-                        <span className="text-slate-400 shrink-0 ml-2">
-                          {(doc.sizeBytes / 1024).toFixed(1)} KB
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <h3 className="text-lg font-bold text-slate-900">{activeTool.title}</h3>
+                <p className="text-xs text-slate-500 mt-0.5">{activeTool.subtitle}</p>
               </div>
-            )}
-          </div>
+              <button
+                onClick={() => setActiveTool(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-          {/* Step 2: Target Requirement Preset */}
-          <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm">
-            <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-              2. Select Application Requirement / Preset
-            </h3>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {presets.map((preset) => {
-                const isSelected = selectedPreset?.id === preset.id;
-                return (
-                  <div
-                    key={preset.id}
-                    onClick={() => setSelectedPreset(preset)}
-                    className={`p-3.5 rounded-xl border transition cursor-pointer ${
-                      isSelected
-                        ? 'border-blue-600 bg-blue-50/60 shadow-sm ring-1 ring-blue-600'
-                        : 'border-slate-200 hover:border-slate-300 bg-slate-50/50'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-bold text-sm text-slate-900">{preset.name}</span>
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                          isSelected ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700'
+            {/* 1. SELECT SOURCE */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+                1. Select Source Document
+              </label>
+              {documents.length === 0 ? (
+                <p className="text-xs text-red-500 bg-red-50 p-2.5 rounded-xl">
+                  No documents found in vault. Please add a document first.
+                </p>
+              ) : activeTool.id === 'image_to_pdf' || activeTool.id === 'merge_pdf' ? (
+                <div className="space-y-1.5 max-h-36 overflow-y-auto border border-slate-200 rounded-xl p-2 bg-slate-50">
+                  {documents.map((d) => {
+                    const isSelected = multiSelectedDocs.some((m) => m.id === d.id);
+                    return (
+                      <div
+                        key={d.id}
+                        onClick={() => {
+                          if (isSelected) {
+                            setMultiSelectedDocs(multiSelectedDocs.filter((m) => m.id !== d.id));
+                          } else {
+                            setMultiSelectedDocs([...multiSelectedDocs, d]);
+                          }
+                        }}
+                        className={`flex items-center justify-between p-2 rounded-lg text-xs cursor-pointer transition ${
+                          isSelected ? 'bg-blue-600 text-white font-medium' : 'bg-white hover:bg-slate-100 text-slate-700'
                         }`}
                       >
-                        {preset.outputFormat}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-600">
-                      {preset.width}×{preset.height} {preset.widthUnit} • Max: {(preset.maxFileSizeBytes / 1024).toFixed(0)} KB
-                    </p>
-                    <p className="text-[11px] text-slate-400 mt-1 line-clamp-1">{preset.notes}</p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Action Trigger */}
-          <button
-            onClick={handleExecuteSmartPreparer}
-            disabled={!selectedDocument || !selectedPreset || isProcessing}
-            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3.5 px-4 rounded-2xl shadow-lg shadow-blue-600/20 disabled:opacity-50 disabled:shadow-none transition flex items-center justify-center gap-2 cursor-pointer"
-          >
-            {isProcessing ? (
-              <>
-                <RefreshCw className="w-5 h-5 animate-spin" />
-                <span>Processing & Verifying locally...</span>
-              </>
-            ) : (
-              <>
-                <Wand2 className="w-5 h-5" />
-                <span>GET REQUIRED FORMAT</span>
-              </>
-            )}
-          </button>
-        </div>
-      )}
-
-      {/* TAB 2: IMAGE TO PDF */}
-      {activeTab === 'imageToPdf' && (
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm space-y-4">
-          <div>
-            <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-              Select Images for PDF Document
-            </h3>
-            <div className="max-h-48 overflow-y-auto space-y-1.5">
-              {documents
-                .filter((d) => d.extension !== 'pdf')
-                .map((img) => {
-                  const isChecked = selectedImagesForPdf.some((i) => i.id === img.id);
-                  return (
-                    <label
-                      key={img.id}
-                      className="flex items-center justify-between p-2 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer text-xs"
-                    >
-                      <div className="flex items-center gap-2 truncate">
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedImagesForPdf([...selectedImagesForPdf, img]);
-                            } else {
-                              setSelectedImagesForPdf(selectedImagesForPdf.filter((i) => i.id !== img.id));
-                            }
-                          }}
-                          className="rounded text-blue-600"
-                        />
-                        <span className="font-medium text-slate-900 truncate">{img.displayName}</span>
+                        <span className="truncate">{d.displayName}</span>
+                        <span className="text-[11px] opacity-80 uppercase">.{d.extension}</span>
                       </div>
-                      <span className="text-slate-400 ml-2">{(img.sizeBytes / 1024).toFixed(1)} KB</span>
-                    </label>
-                  );
-                })}
-            </div>
-            <p className="text-xs text-slate-500 mt-2">
-              {selectedImagesForPdf.length} images selected for PDF pages
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">Page Format</label>
-              <select
-                value={pdfPageSize}
-                onChange={(e) => setPdfPageSize(e.target.value as any)}
-                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
-              >
-                <option value="A4">A4 (Standard)</option>
-                <option value="Letter">US Letter</option>
-                <option value="A3">A3 (Large)</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">Fit Mode</label>
-              <select
-                value={pdfFitMode}
-                onChange={(e) => setPdfFitMode(e.target.value as any)}
-                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
-              >
-                <option value="contain">Contain (Fit margins)</option>
-                <option value="cover">Cover (Fill page)</option>
-                <option value="original">Original size</option>
-              </select>
-            </div>
-          </div>
-
-          <button
-            onClick={handleExecuteImageToPdf}
-            disabled={selectedImagesForPdf.length === 0 || isProcessing}
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-          >
-            {isProcessing ? 'Generating PDF locally...' : `Generate PDF from ${selectedImagesForPdf.length} Images`}
-          </button>
-        </div>
-      )}
-
-      {/* TAB 3: PDF MERGE */}
-      {activeTab === 'pdfOps' && (
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm space-y-4">
-          <div>
-            <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-              Select 2+ PDFs to Merge
-            </h3>
-            <div className="max-h-48 overflow-y-auto space-y-1.5">
-              {documents
-                .filter((d) => d.extension === 'pdf')
-                .map((pdf) => {
-                  const isChecked = selectedPdfsForMerge.some((p) => p.id === pdf.id);
-                  return (
-                    <label
-                      key={pdf.id}
-                      className="flex items-center justify-between p-2 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer text-xs"
-                    >
-                      <div className="flex items-center gap-2 truncate">
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedPdfsForMerge([...selectedPdfsForMerge, pdf]);
-                            } else {
-                              setSelectedPdfsForMerge(selectedPdfsForMerge.filter((p) => p.id !== pdf.id));
-                            }
-                          }}
-                          className="rounded text-blue-600"
-                        />
-                        <span className="font-medium text-slate-900 truncate">{pdf.displayName}</span>
-                      </div>
-                      <span className="text-slate-400 ml-2">{(pdf.sizeBytes / 1024).toFixed(1)} KB</span>
-                    </label>
-                  );
-                })}
-            </div>
-            <p className="text-xs text-slate-500 mt-2">
-              {selectedPdfsForMerge.length} PDFs selected
-            </p>
-          </div>
-
-          <button
-            onClick={handleExecutePdfMerge}
-            disabled={selectedPdfsForMerge.length < 2 || isProcessing}
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-          >
-            {isProcessing ? 'Merging PDFs locally...' : `Merge ${selectedPdfsForMerge.length} PDFs`}
-          </button>
-        </div>
-      )}
-
-      {/* RESULT & VERIFICATION PANEL (Section 17 specification) */}
-      {result && (
-        <div
-          className={`border rounded-2xl p-5 shadow-sm space-y-4 ${
-            result.isSuccess ? 'bg-white border-emerald-300' : 'bg-red-50 border-red-200'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {result.isSuccess ? (
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    );
+                  })}
+                </div>
               ) : (
-                <AlertCircle className="w-5 h-5 text-red-600" />
+                <select
+                  value={chosenDoc?.id || ''}
+                  onChange={(e) => {
+                    const found = documents.find((d) => d.id === e.target.value) || null;
+                    setChosenDoc(found);
+                    if (found) setRenameText(found.displayName);
+                  }}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {documents.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.displayName} (.{d.extension.toUpperCase()} • {(d.sizeBytes / 1024).toFixed(0)} KB)
+                    </option>
+                  ))}
+                </select>
               )}
-              <span className="font-bold text-sm text-slate-900">
-                {result.isSuccess ? 'PREPARATION & VERIFICATION COMPLETED' : 'PREPARATION FAILED'}
-              </span>
             </div>
 
-            {result.isSuccess && (
-              <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-0.5 rounded-full">
-                {(result.outputSizeBytes / 1024).toFixed(1)} KB
-              </span>
-            )}
-          </div>
+            {/* 2. CONFIGURE */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+                2. Configuration
+              </label>
 
-          {/* Stepper Pipeline */}
-          <div className="bg-slate-50 rounded-xl p-3.5 space-y-2 border border-slate-100">
-            {result.steps.map((step, idx) => (
-              <div key={idx} className="flex items-start gap-2.5 text-xs">
-                {step.status === 'completed' ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                ) : step.status === 'failed' ? (
-                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                ) : (
-                  <div className="w-4 h-4 rounded-full border border-slate-300 shrink-0 mt-0.5" />
-                )}
+              {activeTool.id === 'png_to_jpg' && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+                  <span>
+                    JPEG does not support transparency. Transparent areas will automatically be filled with a solid clean white background.
+                  </span>
+                </div>
+              )}
+
+              {activeTool.id === 'compress_image' && (
                 <div>
-                  <p className="font-semibold text-slate-800">{step.name}</p>
-                  <p className="text-slate-500 text-[11px]">{step.description}</p>
-                  {step.error && <p className="text-red-500 text-[11px] font-medium mt-0.5">{step.error}</p>}
+                  <label className="text-xs text-slate-500 block mb-1">Target File Size</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={targetKb}
+                      onChange={(e) => setTargetKb(Math.max(10, parseInt(e.target.value) || 50))}
+                      className="w-32 px-3 py-2 border border-slate-200 rounded-xl text-sm"
+                    />
+                    <span className="text-xs font-semibold text-slate-600">KB max</span>
+                  </div>
+                </div>
+              )}
+
+              {activeTool.id === 'split_pdf' && (
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Split after Page Number</label>
+                  <input
+                    type="number"
+                    value={splitPageNum}
+                    onChange={(e) => setSplitPageNum(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-32 px-3 py-2 border border-slate-200 rounded-xl text-sm"
+                  />
+                </div>
+              )}
+
+              {activeTool.id === 'image_editor' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Photo Preset</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: 'passport', label: 'Passport (35×45mm)' },
+                        { id: 'id', label: 'ID Photo (2×2")' },
+                        { id: 'signature', label: 'Signature' },
+                      ].map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setEditorPreset(p.id as any)}
+                          className={`p-2 rounded-xl text-xs font-medium border text-center transition cursor-pointer ${
+                            editorPreset === p.id
+                              ? 'bg-blue-600 text-white border-blue-600'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">DPI Resolution</label>
+                    <div className="flex items-center gap-2">
+                      {[150, 200, 300].map((dpi) => (
+                        <button
+                          key={dpi}
+                          type="button"
+                          onClick={() => setEditorDpi(dpi)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+                            editorDpi === dpi
+                              ? 'bg-slate-800 text-white border-slate-800'
+                              : 'bg-white text-slate-600 border-slate-200'
+                          }`}
+                        >
+                          {dpi} DPI
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTool.id === 'rename' && (
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">New Display Name</label>
+                  <input
+                    type="text"
+                    value={renameText}
+                    onChange={(e) => setRenameText(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* 3. PROCESS RESULT & VERIFY */}
+            {processResult && (
+              <div
+                className={`p-3.5 rounded-2xl border text-xs ${
+                  processResult.isSuccess
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                    : 'bg-red-50 border-red-200 text-red-950'
+                }`}
+              >
+                <div className="flex items-center gap-2 font-semibold">
+                  {processResult.isSuccess ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-red-600" />
+                  )}
+                  <span>{processResult.summary}</span>
                 </div>
               </div>
-            ))}
-          </div>
+            )}
 
-          <p className="text-xs text-slate-600">{result.summary}</p>
+            {/* 4. ACTIONS: EXECUTE & SAVE AS COPY */}
+            <div className="pt-2 flex items-center justify-between border-t border-slate-100">
+              <span className="text-xs text-slate-400">Original remains untouched</span>
 
-          {/* Output Preview & Actions */}
-          {result.isSuccess && result.outputDataUrl && (
-            <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <a
-                  href={result.outputDataUrl}
-                  download={result.outputFileName}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow transition"
-                >
-                  <Download className="w-4 h-4" /> Download ({result.outputFileName})
-                </a>
-                <button
-                  onClick={handleSaveToLibrary}
-                  className="flex items-center justify-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-2.5 rounded-xl transition"
-                >
-                  Save to Store
-                </button>
+              <div className="flex items-center gap-2">
+                {!processResult ? (
+                  <button
+                    onClick={handleExecuteTool}
+                    disabled={isProcessing || (!chosenDoc && multiSelectedDocs.length === 0)}
+                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white rounded-xl text-xs font-semibold shadow-xs transition disabled:opacity-50 cursor-pointer"
+                  >
+                    {isProcessing ? 'Processing offline...' : 'Process'}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        const a = document.createElement('a');
+                        a.href = processResult.outputDataUrl || '';
+                        a.download = processResult.outputFileName;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                      }}
+                      className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-medium transition cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Download className="w-3.5 h-3.5" /> Download
+                    </button>
+
+                    <button
+                      onClick={handleSaveAsCopy}
+                      disabled={savedSuccess}
+                      className={`px-4 py-2 rounded-xl text-xs font-semibold shadow-xs transition flex items-center gap-1.5 cursor-pointer ${
+                        savedSuccess
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-blue-600 hover:bg-blue-700 text-white'
+                      }`}
+                    >
+                      {savedSuccess ? (
+                        <>
+                          <Check className="w-3.5 h-3.5" /> Saved to Vault
+                        </>
+                      ) : (
+                        'Save as Copy'
+                      )}
+                    </button>
+                  </>
+                )}
               </div>
-
-              <span className="text-[11px] text-slate-400 text-center sm:text-right">
-                100% verified locally on device
-              </span>
             </div>
-          )}
+          </div>
         </div>
       )}
     </div>

@@ -9,6 +9,7 @@ import com.dochub.app.data.storage.FileManager
 import com.dochub.app.engine.ImageProcessor
 import com.dochub.app.engine.PdfProcessor
 import com.dochub.app.engine.SmartPreparer
+import com.dochub.app.security.AppLockManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 
@@ -18,6 +19,7 @@ class DocHubApplication : Application() {
 
     val database by lazy { DocHubDatabase.getDatabase(this, applicationScope) }
     val fileManager by lazy { FileManager(this) }
+    val appLockManager by lazy { AppLockManager(this) }
 
     val documentRepository by lazy { DocumentRepository(database.documentDao()) }
     val historyRepository by lazy { HistoryRepository(database.conversionHistoryDao()) }

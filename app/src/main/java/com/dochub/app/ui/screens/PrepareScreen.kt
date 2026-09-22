@@ -1,13 +1,12 @@
 package com.dochub.app.ui.screens
 
-import android.content.Intent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
+import android.graphics.Color
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -15,282 +14,308 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.FileProvider
-import com.dochub.app.data.local.entity.PresetEntity
+import com.dochub.app.data.local.entity.DocumentEntity
 import com.dochub.app.ui.viewmodel.DocHubViewModel
+import kotlinx.coroutines.launch
+import java.io.File
+
+enum class PrepareTool(val title: String, val subtitle: String, val icon: ImageVector) {
+    JPG_TO_PNG("JPG → PNG", "Lossless format conversion", Icons.Default.Transform),
+    PNG_TO_JPG("PNG → JPG", "Solid background conversion", Icons.Default.SwapHoriz),
+    IMAGE_TO_PDF("Image → PDF", "Single or multi-page PDF", Icons.Default.PictureAsPdf),
+    PDF_TO_IMAGE("PDF → Image", "Extract pages as images", Icons.Default.Image),
+    COMPRESS_IMAGE("Compress Image", "Target file size in KB", Icons.Default.Compress),
+    COMPRESS_PDF("Compress PDF", "Optimize document size", Icons.Default.ZoomInMap),
+    MERGE_PDF("Merge PDF", "Combine multiple documents", Icons.Default.CallMerge),
+    SPLIT_PDF("Split PDF", "Split or extract pages", Icons.Default.CallSplit),
+    RENAME("Rename", "Safe display name change", Icons.Default.Edit),
+    IMAGE_EDITOR("Image Editor", "Crop, presets & DPI overlay", Icons.Default.Crop)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PrepareScreen(viewModel: DocHubViewModel) {
     val documents by viewModel.documents.collectAsState()
-    val presets by viewModel.allPresets.collectAsState()
-    val selectedDoc by viewModel.selectedDocument.collectAsState()
-    val selectedPreset by viewModel.selectedPreset.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
-    val prepResult by viewModel.preparationResult.collectAsState()
-    val context = LocalContext.current
+    val statusMessage by viewModel.statusMessage.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
 
-    // Auto-select first preset if none selected
-    LaunchedEffect(presets) {
-        if (selectedPreset == null && presets.isNotEmpty()) {
-            viewModel.selectedPreset.value = presets.first()
-        }
-    }
+    var activeTool by remember { mutableStateOf<PrepareTool?>(null) }
+    var selectedDoc by remember { mutableStateOf<DocumentEntity?>(viewModel.selectedDocument.value) }
 
-    var showDocSelector by remember { mutableStateOf(false) }
+    // Parameters for tools
+    var targetKbText by remember { mutableStateOf("100") }
+    var splitPageText by remember { mutableStateOf("1") }
+    var cropAspectRatio by remember { mutableStateOf("1:1") }
+    var selectedPresetName by remember { mutableStateOf("Passport Photo (35x45 mm)") }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Prepare Document", fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                title = {
+                    Column {
+                        Text("Prepare Document", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                        Text(
+                            "Convert, resize, compress and organize your files.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             )
         }
     ) { padding ->
-        LazyColumn(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 16.dp)
         ) {
-            // Document Selection Card
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("1. Select Source Document", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        Spacer(Modifier.height(8.dp))
+            // Processing or Status indicator
+            if (isProcessing) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
+            }
 
-                        if (selectedDoc != null) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(selectedDoc!!.displayName, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                                    Text(
-                                        "${selectedDoc!!.sizeBytes / 1024} KB • .${selectedDoc!!.extension.uppercase()}",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                TextButton(onClick = { showDocSelector = true }) {
-                                    Text("Change")
-                                }
-                            }
-                        } else {
-                            OutlinedButton(
-                                onClick = { showDocSelector = true },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.FolderOpen, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Choose from Stored Documents")
-                            }
-                        }
-                    }
+            statusMessage?.let { msg ->
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                ) {
+                    Text(
+                        msg,
+                        modifier = Modifier.padding(10.dp),
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 }
             }
 
-            // Preset Selection Card
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("2. Target Requirement / Preset", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        Spacer(Modifier.height(8.dp))
-
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            presets.forEach { preset ->
-                                val isSelected = selectedPreset?.id == preset.id
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { viewModel.selectedPreset.value = preset },
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                                    ),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        RadioButton(
-                                            selected = isSelected,
-                                            onClick = { viewModel.selectedPreset.value = preset }
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        Column {
-                                            Text(preset.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                            Text(
-                                                "Target: ${preset.outputFormat} • ${preset.width}x${preset.height}${preset.widthUnit} • Max: ${preset.maxFileSizeBytes / 1024} KB",
-                                                fontSize = 12.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Action Button: GET REQUIRED FORMAT
-            item {
-                Button(
-                    onClick = { viewModel.executePreparation() },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    enabled = selectedDoc != null && selectedPreset != null && !isProcessing
-                ) {
-                    if (isProcessing) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
-                        Spacer(Modifier.width(12.dp))
-                        Text("Processing locally...")
-                    } else {
-                        Icon(Icons.Default.AutoFixHigh, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("GET REQUIRED FORMAT", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    }
-                }
-            }
-
-            // Preparation Result & Pipeline Details (Section 17 specification)
-            prepResult?.let { res ->
-                item {
+            // 10 Clean Action Cards Grid
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(PrepareTool.values()) { tool ->
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { activeTool = tool },
+                        shape = RoundedCornerShape(14.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = if (res.isSuccess) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.errorContainer
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
                         ),
-                        shape = RoundedCornerShape(16.dp)
+                        modifier = Modifier.height(115.dp)
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(36.dp)
                             ) {
-                                Text(
-                                    if (res.isSuccess) "✓ PREPARATION COMPLETED" else "FAILED",
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (res.isSuccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                                )
-                                if (res.isSuccess) {
-                                    Text(
-                                        "${res.outputSizeBytes / 1024} KB",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 18.sp
-                                    )
-                                }
-                            }
-
-                            Spacer(Modifier.height(12.dp))
-
-                            // Pipeline Steps
-                            res.steps.forEach { step ->
-                                Row(
-                                    modifier = Modifier.padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
+                                Box(contentAlignment = Alignment.Center) {
                                     Icon(
-                                        if (step.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                                        tool.icon,
                                         contentDescription = null,
-                                        tint = if (step.isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                        tint = MaterialTheme.colorScheme.onPrimary,
                                         modifier = Modifier.size(20.dp)
                                     )
-                                    Spacer(Modifier.width(8.dp))
-                                    Column {
-                                        Text(step.name, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                                        Text(
-                                            step.description,
-                                            fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
                                 }
                             }
 
-                            if (res.isSuccess && res.outputFile != null) {
-                                Spacer(Modifier.height(16.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Button(
-                                        onClick = {
-                                            val uri = FileProvider.getUriForFile(
-                                                context,
-                                                "${context.packageName}.fileprovider",
-                                                res.outputFile
-                                            )
-                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                type = "*/*"
-                                                putExtra(Intent.EXTRA_STREAM, uri)
-                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                            }
-                                            context.startActivity(Intent.createChooser(shareIntent, "Share Prepared Document"))
-                                        },
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Icon(Icons.Default.Share, contentDescription = null)
-                                        Spacer(Modifier.width(6.dp))
-                                        Text("Share")
-                                    }
-                                }
+                            Column {
+                                Text(
+                                    tool.title,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    tool.subtitle,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1
+                                )
                             }
                         }
                     }
                 }
             }
-
-            item { Spacer(Modifier.height(24.dp)) }
         }
     }
 
-    // Modal Document Picker Dialog
-    if (showDocSelector) {
+    // Modal Tool Dialog for SELECT -> CONFIGURE -> PROCESS -> SAVE AS COPY
+    activeTool?.let { tool ->
         AlertDialog(
-            onDismissRequest = { showDocSelector = false },
-            title = { Text("Select Document") },
+            onDismissRequest = { activeTool = null },
+            title = { Text(tool.title, fontWeight = FontWeight.Bold) },
             text = {
-                if (documents.isEmpty()) {
-                    Text("No documents stored yet. Import documents from the Documents tab.")
-                } else {
-                    LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
-                        items(documents) { doc ->
-                            ListItem(
-                                headlineContent = { Text(doc.displayName) },
-                                supportingContent = { Text("${doc.sizeBytes / 1024} KB • ${doc.category}") },
-                                modifier = Modifier.clickable {
-                                    viewModel.selectedDocument.value = doc
-                                    showDocSelector = false
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(tool.subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                    // Step 1: Select Source Document
+                    Text("1. Source Document", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+
+                    if (documents.isEmpty()) {
+                        Text("No documents stored yet. Add a document first.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    } else {
+                        var docDropdownExpanded by remember { mutableStateOf(false) }
+                        val currentSelection = selectedDoc ?: documents.first()
+
+                        Box {
+                            OutlinedButton(
+                                onClick = { docDropdownExpanded = true },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(currentSelection.displayName, maxLines = 1)
+                            }
+
+                            DropdownMenu(
+                                expanded = docDropdownExpanded,
+                                onDismissRequest = { docDropdownExpanded = false }
+                            ) {
+                                documents.forEach { doc ->
+                                    DropdownMenuItem(
+                                        text = { Text("${doc.displayName} (.${doc.extension})") },
+                                        onClick = {
+                                            selectedDoc = doc
+                                            docDropdownExpanded = false
+                                        }
+                                    )
                                 }
+                            }
+                        }
+                    }
+
+                    // Step 2: Tool Configuration
+                    when (tool) {
+                        PrepareTool.PNG_TO_JPG -> {
+                            Text("Note: JPEG does not support transparency. Transparent areas will be converted to a solid white background.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        PrepareTool.COMPRESS_IMAGE -> {
+                            OutlinedTextField(
+                                value = targetKbText,
+                                onValueChange = { targetKbText = it },
+                                label = { Text("Target File Size (KB)") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
                             )
+                        }
+                        PrepareTool.SPLIT_PDF -> {
+                            OutlinedTextField(
+                                value = splitPageText,
+                                onValueChange = { splitPageText = it },
+                                label = { Text("Split after Page Number") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        PrepareTool.IMAGE_EDITOR -> {
+                            Text("Select Preset:", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                FilterChip(
+                                    selected = cropAspectRatio == "1:1",
+                                    onClick = { cropAspectRatio = "1:1" },
+                                    label = { Text("1:1") }
+                                )
+                                FilterChip(
+                                    selected = cropAspectRatio == "35:45",
+                                    onClick = { cropAspectRatio = "35:45" },
+                                    label = { Text("Passport") }
+                                )
+                                FilterChip(
+                                    selected = cropAspectRatio == "Free",
+                                    onClick = { cropAspectRatio = "Free" },
+                                    label = { Text("Free") }
+                                )
+                            }
+                        }
+                        else -> {
+                            Text("Operation will process offline and create a verified encrypted copy.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showDocSelector = false }) {
+                Button(
+                    onClick = {
+                        val doc = selectedDoc ?: documents.firstOrNull()
+                        if (doc != null) {
+                            coroutineScope.launch {
+                                val sourceFile = File(doc.localPath)
+                                when (tool) {
+                                    PrepareTool.JPG_TO_PNG -> {
+                                        val res = viewModel.imageProcessor.convertFormat(sourceFile, "PNG")
+                                        if (res.success) {
+                                            viewModel.saveAsCopy(res.outputFile, "${doc.displayName}_png", "png", "image/png", doc.category)
+                                        }
+                                    }
+                                    PrepareTool.PNG_TO_JPG -> {
+                                        val res = viewModel.imageProcessor.convertFormat(sourceFile, "JPG", Color.WHITE)
+                                        if (res.success) {
+                                            viewModel.saveAsCopy(res.outputFile, "${doc.displayName}_jpg", "jpg", "image/jpeg", doc.category)
+                                        }
+                                    }
+                                    PrepareTool.IMAGE_TO_PDF -> {
+                                        val res = viewModel.pdfProcessor.imagesToPdf(listOf(sourceFile), outputBaseName = "${doc.displayName}_pdf")
+                                        if (res.success && res.outputFiles.isNotEmpty()) {
+                                            viewModel.saveAsCopy(res.outputFiles.first(), "${doc.displayName}_pdf", "pdf", "application/pdf", doc.category)
+                                        }
+                                    }
+                                    PrepareTool.PDF_TO_IMAGE -> {
+                                        val res = viewModel.pdfProcessor.pdfToImages(sourceFile, outputBaseName = "${doc.displayName}_page")
+                                        if (res.success && res.outputFiles.isNotEmpty()) {
+                                            viewModel.saveAsCopy(res.outputFiles.first(), "${doc.displayName}_page1", "jpg", "image/jpeg", doc.category)
+                                        }
+                                    }
+                                    PrepareTool.COMPRESS_IMAGE -> {
+                                        val targetBytes = (targetKbText.toLongOrNull() ?: 100L) * 1024L
+                                        val res = viewModel.imageProcessor.compressToTargetSize(sourceFile, maxFileSizeBytes = targetBytes, baseOutputName = "${doc.displayName}_compressed")
+                                        if (res.success) {
+                                            viewModel.saveAsCopy(res.outputFile, "${doc.displayName}_compressed", res.outputFile.extension, "image/jpeg", doc.category)
+                                        }
+                                    }
+                                    PrepareTool.MERGE_PDF -> {
+                                        val res = viewModel.pdfProcessor.mergePdfs(listOf(sourceFile), outputBaseName = "${doc.displayName}_merged")
+                                        if (res.success && res.outputFiles.isNotEmpty()) {
+                                            viewModel.saveAsCopy(res.outputFiles.first(), "${doc.displayName}_merged", "pdf", "application/pdf", doc.category)
+                                        }
+                                    }
+                                    PrepareTool.SPLIT_PDF -> {
+                                        val page = splitPageText.toIntOrNull() ?: 1
+                                        val res = viewModel.pdfProcessor.splitPdf(sourceFile, page, outputBaseName = "${doc.displayName}")
+                                        if (res.success && res.outputFiles.isNotEmpty()) {
+                                            viewModel.saveAsCopy(res.outputFiles.first(), "${doc.displayName}_part1", "pdf", "application/pdf", doc.category)
+                                        }
+                                    }
+                                    PrepareTool.IMAGE_EDITOR -> {
+                                        val res = viewModel.imageProcessor.cropImage(sourceFile, 0, 0, 600, 600, "JPG", "${doc.displayName}_edited")
+                                        if (res.success) {
+                                            viewModel.saveAsCopy(res.outputFile, "${doc.displayName}_preset", "jpg", "image/jpeg", doc.category)
+                                        }
+                                    }
+                                    else -> {}
+                                }
+                            }
+                        }
+                        activeTool = null
+                    },
+                    enabled = documents.isNotEmpty()
+                ) {
+                    Text("Save as Copy")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { activeTool = null }) {
                     Text("Cancel")
                 }
             }

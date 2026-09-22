@@ -5,7 +5,11 @@ export type DocumentCategory =
   | 'Finance'
   | 'Government'
   | 'Travel'
+  | 'Insurance'
   | 'Personal'
+  | 'Photos'
+  | 'Certificates'
+  | 'Uncategorized'
   | 'Other';
 
 export interface StoredDocument {
@@ -18,10 +22,13 @@ export interface StoredDocument {
   category: DocumentCategory;
   tags: string[];
   favorite: boolean;
+  encrypted: boolean;
   dataUrl: string; // Stored locally in IndexedDB / local memory
   createdAt: number;
   updatedAt: number;
 }
+
+export type AppLockMode = 'OFF' | 'PIN' | 'BIOMETRIC';
 
 export interface Preset {
   id: string;

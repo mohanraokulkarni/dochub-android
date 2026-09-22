@@ -5,7 +5,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -18,6 +17,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dochub.app.data.local.entity.DocumentEntity
 import com.dochub.app.ui.viewmodel.DocHubViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -25,13 +25,12 @@ import com.dochub.app.ui.viewmodel.DocHubViewModel
 fun HomeScreen(
     viewModel: DocHubViewModel,
     onNavigateToDocuments: () -> Unit,
-    onNavigateToPrepare: () -> Unit
+    onNavigateToPrepare: () -> Unit,
+    onOpenDocument: (DocumentEntity) -> Unit = {}
 ) {
     val recentDocs by viewModel.recentDocuments.collectAsState()
-    val recentHistory by viewModel.recentHistory.collectAsState()
     val statusMessage by viewModel.statusMessage.collectAsState()
 
-    // Android Document Picker Launcher (SAF ACTION_OPEN_DOCUMENT)
     val documentPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -43,10 +42,15 @@ fun HomeScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("DocHub", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                         Text(
-                            "Store once. Find fast. Get the format you need.",
-                            fontSize = 12.sp,
+                            "DocHub",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 22.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            "Store once. Find fast.",
+                            fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -61,19 +65,20 @@ fun HomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // Status banner if present
+            // Optional Status message
             statusMessage?.let { msg ->
                 item {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
                             text = msg,
-                            modifier = Modifier.padding(12.dp),
+                            modifier = Modifier.padding(14.dp),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
@@ -81,134 +86,56 @@ fun HomeScreen(
                 }
             }
 
-            // Primary Call to Action Buttons
+            // 1. Primary Action Buttons
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(
                         onClick = { documentPickerLauncher.launch(arrayOf("*/*")) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Add Document")
-                    }
-
-                    OutlinedButton(
-                        onClick = onNavigateToDocuments,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Default.Search, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Find")
-                    }
-                }
-            }
-
-            // Prepare highlight card
-            item {
-                Card(
-                    onClick = onNavigateToPrepare,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                    ),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.AutoFixHigh,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier.size(32.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
                         )
-                        Spacer(Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "Prepare Document",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
-                            Text(
-                                "Auto-convert, resize & compress for exams, passports & portals",
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
-                            )
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("+ Add Document", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onNavigateToDocuments,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Find Documents", fontSize = 14.sp)
+                        }
+
+                        FilledTonalButton(
+                            onClick = onNavigateToPrepare,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Prepare Document", fontSize = 14.sp)
                         }
                     }
                 }
             }
 
-            // Quick Actions Section
-            item {
-                Text(
-                    "Quick Actions",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    QuickActionCard(
-                        title = "Image → PDF",
-                        icon = Icons.Default.PictureAsPdf,
-                        modifier = Modifier.weight(1f),
-                        onClick = onNavigateToPrepare
-                    )
-                    QuickActionCard(
-                        title = "PDF → Image",
-                        icon = Icons.Default.Image,
-                        modifier = Modifier.weight(1f),
-                        onClick = onNavigateToPrepare
-                    )
-                    QuickActionCard(
-                        title = "Compress",
-                        icon = Icons.Default.Compress,
-                        modifier = Modifier.weight(1f),
-                        onClick = onNavigateToPrepare
-                    )
-                }
-            }
-
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    QuickActionCard(
-                        title = "Merge PDF",
-                        icon = Icons.Default.CallMerge,
-                        modifier = Modifier.weight(1f),
-                        onClick = onNavigateToPrepare
-                    )
-                    QuickActionCard(
-                        title = "Split PDF",
-                        icon = Icons.Default.CallSplit,
-                        modifier = Modifier.weight(1f),
-                        onClick = onNavigateToPrepare
-                    )
-                    QuickActionCard(
-                        title = "Presets",
-                        icon = Icons.Default.Tune,
-                        modifier = Modifier.weight(1f),
-                        onClick = onNavigateToPrepare
-                    )
-                }
-            }
-
-            // Recent Documents Section
+            // 2. Recent Documents
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -218,97 +145,168 @@ fun HomeScreen(
                     Text(
                         "Recent Documents",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
-                    TextButton(onClick = onNavigateToDocuments) {
-                        Text("View all")
+                    if (recentDocs.isNotEmpty()) {
+                        TextButton(onClick = onNavigateToDocuments) {
+                            Text("See all", fontSize = 13.sp)
+                        }
                     }
                 }
             }
 
             if (recentDocs.isEmpty()) {
                 item {
-                    Text(
-                        "No documents stored yet. Tap 'Add Document' to import safely.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                Icons.Default.Description,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "No documents stored yet",
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Store your ID, passport, or certificates safely offline.",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             } else {
-                items(recentDocs) { doc ->
+                items(recentDocs.take(4)) { doc ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onNavigateToDocuments() },
-                        shape = RoundedCornerShape(12.dp)
+                            .clickable {
+                                onOpenDocument(doc)
+                                onNavigateToDocuments()
+                            },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                     ) {
                         Row(
-                            modifier = Modifier.padding(12.dp),
+                            modifier = Modifier.padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                if (doc.extension.equals("pdf", true)) Icons.Default.PictureAsPdf else Icons.Default.Image,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(32.dp)
-                            )
-                            Spacer(Modifier.width(12.dp))
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (doc.extension.equals("pdf", true)) {
+                                    MaterialTheme.colorScheme.errorContainer
+                                } else {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                },
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        if (doc.extension.equals("pdf", true)) Icons.Default.PictureAsPdf else Icons.Default.Image,
+                                        contentDescription = null,
+                                        tint = if (doc.extension.equals("pdf", true)) {
+                                            MaterialTheme.colorScheme.onErrorContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onPrimaryContainer
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(14.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(doc.displayName, fontWeight = FontWeight.Medium, maxLines = 1)
+                                Text(
+                                    doc.displayName,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 15.sp,
+                                    maxLines = 1
+                                )
                                 Text(
                                     "${doc.category} • ${doc.sizeBytes / 1024} KB • .${doc.extension.uppercase()}",
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                        }
-                    }
-                }
-            }
-
-            // Recent Conversions
-            item {
-                Text(
-                    "Recent Conversions",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            if (recentHistory.isEmpty()) {
-                item {
-                    Text(
-                        "No conversion history yet.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            } else {
-                items(recentHistory) { hist ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(hist.operation, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                Text(
-                                    hist.status,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
-                                )
-                            }
-                            Text(
-                                "Output: ${hist.outputSizeBytes / 1024} KB",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            Icon(
+                                Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.outline
                             )
                         }
                     }
+                }
+            }
+
+            // 3. Quick Actions (clean 4-card grid)
+            item {
+                Text(
+                    "Quick Actions",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    QuickActionTile(
+                        title = "JPG → PNG",
+                        subtitle = "Convert",
+                        icon = Icons.Default.Transform,
+                        modifier = Modifier.weight(1f),
+                        onClick = onNavigateToPrepare
+                    )
+                    QuickActionTile(
+                        title = "Image → PDF",
+                        subtitle = "Combine",
+                        icon = Icons.Default.PictureAsPdf,
+                        modifier = Modifier.weight(1f),
+                        onClick = onNavigateToPrepare
+                    )
+                }
+            }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    QuickActionTile(
+                        title = "Compress",
+                        subtitle = "Target KB",
+                        icon = Icons.Default.Compress,
+                        modifier = Modifier.weight(1f),
+                        onClick = onNavigateToPrepare
+                    )
+                    QuickActionTile(
+                        title = "Merge PDF",
+                        subtitle = "Join files",
+                        icon = Icons.Default.CallMerge,
+                        modifier = Modifier.weight(1f),
+                        onClick = onNavigateToPrepare
+                    )
                 }
             }
 
@@ -318,26 +316,38 @@ fun HomeScreen(
 }
 
 @Composable
-fun QuickActionCard(
+fun QuickActionTile(
     title: String,
+    subtitle: String,
     icon: ImageVector,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     Card(
         onClick = onClick,
-        modifier = modifier.height(80.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        modifier = modifier.height(76.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        )
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
-            Spacer(Modifier.height(4.dp))
-            Text(title, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Text(subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }

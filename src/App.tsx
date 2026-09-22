@@ -3,11 +3,11 @@ import {
   Home as HomeIcon,
   FolderOpen,
   Wand2,
-  History as HistoryIcon,
   Settings as SettingsIcon,
   Smartphone,
   Download,
-  Terminal,
+  Lock,
+  Fingerprint,
   X
 } from 'lucide-react';
 import {
@@ -18,23 +18,30 @@ import {
   getAllHistory,
   saveHistory,
   clearAllHistory,
+  getAppLockMode,
+  getStoredPin,
 } from './utils/storage';
 import { getInitialSeedDocuments } from './utils/sampleData';
-import { StoredDocument, Preset, ConversionRecord, DocumentCategory } from './types';
+import { StoredDocument, Preset, ConversionRecord, DocumentCategory, AppLockMode } from './types';
 import { HomeScreen } from './components/HomeScreen';
 import { DocumentsScreen } from './components/DocumentsScreen';
 import { PrepareScreen } from './components/PrepareScreen';
-import { HistoryScreen } from './components/HistoryScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { AndroidProjectExplorer } from './components/AndroidProjectExplorer';
 import { downloadAndroidProjectZip } from './utils/androidProjectZip';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'home' | 'documents' | 'prepare' | 'history' | 'settings'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'documents' | 'prepare' | 'settings'>('home');
   const [documents, setDocuments] = useState<StoredDocument[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [history, setHistory] = useState<ConversionRecord[]>([]);
   const [selectedDocForPrepare, setSelectedDocForPrepare] = useState<StoredDocument | null>(null);
+
+  // App Lock State
+  const [lockMode, setLockMode] = useState<AppLockMode>(getAppLockMode());
+  const [isUnlocked, setIsUnlocked] = useState(getAppLockMode() === 'OFF');
+  const [pinEntry, setPinEntry] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
 
   // Android Studio Modal
   const [showAndroidModal, setShowAndroidModal] = useState(false);
@@ -62,6 +69,15 @@ export default function App() {
     loadData();
   }, []);
 
+  // Sync lock mode
+  useEffect(() => {
+    const currentMode = getAppLockMode();
+    setLockMode(currentMode);
+    if (currentMode === 'OFF') {
+      setIsUnlocked(true);
+    }
+  }, [activeTab]);
+
   // Import files handler
   const handleImportFiles = async (files: FileList | File[], category: DocumentCategory = 'Personal') => {
     const fileArray = Array.from(files);
@@ -87,6 +103,7 @@ export default function App() {
         category,
         tags: [ext],
         favorite: false,
+        encrypted: true,
         dataUrl,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -102,15 +119,12 @@ export default function App() {
   const handleDeleteDocument = async (id: string) => {
     await deleteDocument(id);
     setDocuments((prev) => prev.filter((d) => d.id !== id));
-    if (selectedDocForPrepare?.id === id) {
-      setSelectedDocForPrepare(null);
-    }
   };
 
   const handleToggleFavorite = async (id: string) => {
     const doc = documents.find((d) => d.id === id);
     if (!doc) return;
-    const updated = { ...doc, favorite: !doc.favorite, updatedAt: Date.now() };
+    const updated: StoredDocument = { ...doc, favorite: !doc.favorite, updatedAt: Date.now() };
     await saveDocument(updated);
     setDocuments((prev) => prev.map((d) => (d.id === id ? updated : d)));
   };
@@ -125,160 +139,176 @@ export default function App() {
     setHistory((prev) => [record, ...prev]);
   };
 
-  const handleClearHistory = async () => {
+  const handleClearCache = async () => {
     await clearAllHistory();
     setHistory([]);
   };
 
-  const handleClearCache = async () => {
-    const historyList = await getAllHistory();
-    for (const h of historyList) {
-      if (h.outputDataUrl) {
-        h.outputDataUrl = undefined;
-        await saveHistory(h);
-      }
+  const handleVerifyPin = () => {
+    const savedPin = getStoredPin();
+    if (!savedPin || pinEntry === savedPin) {
+      setIsUnlocked(true);
+      setPinError(null);
+      setPinEntry('');
+    } else {
+      setPinError('Incorrect PIN. Please try again.');
     }
   };
 
-  const handleDirectDownloadZip = async () => {
-    try {
-      setIsDownloadingZip(true);
-      await downloadAndroidProjectZip();
-    } finally {
-      setIsDownloadingZip(false);
-    }
-  };
+  // Lock Screen Gate
+  if (!isUnlocked && lockMode !== 'OFF') {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white text-center">
+        <div className="w-16 h-16 rounded-2xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center mb-4">
+          <Lock className="w-8 h-8" />
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight">DocHub is Locked</h1>
+        <p className="text-slate-400 text-sm mt-1 mb-6">Personal offline encrypted vault</p>
+
+        {lockMode === 'PIN' ? (
+          <div className="w-full max-w-xs space-y-4">
+            <input
+              type="password"
+              maxLength={6}
+              value={pinEntry}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, '');
+                setPinEntry(val);
+                setPinError(null);
+                const savedPin = getStoredPin();
+                if (val.length >= 4 && savedPin && val === savedPin) {
+                  setIsUnlocked(true);
+                }
+              }}
+              placeholder="••••"
+              className="w-full text-center text-3xl tracking-widest py-3 bg-slate-800 border border-slate-700 rounded-2xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {pinError && <p className="text-xs text-red-400">{pinError}</p>}
+            <button
+              onClick={handleVerifyPin}
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-2xl transition cursor-pointer"
+            >
+              Unlock Vault
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setIsUnlocked(true)}
+            className="flex items-center gap-2.5 px-6 py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-2xl transition cursor-pointer"
+          >
+            <Fingerprint className="w-5 h-5" />
+            <span>Unlock with Biometrics</span>
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-start antialiased text-slate-800">
-      {/* Top Android Project Bar */}
-      <header className="w-full bg-slate-900 border-b border-slate-800 text-white px-4 py-3 sticky top-0 z-40 shadow-md">
-        <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white shadow-sm">
-              DH
-            </div>
-            <div>
-              <span className="font-bold text-sm tracking-tight text-slate-100 flex items-center gap-1.5">
-                DocHub <span className="text-[10px] bg-emerald-500/20 text-emerald-400 font-mono px-1.5 py-0.5 rounded border border-emerald-500/30">Native Android</span>
-              </span>
-              <p className="text-[11px] text-slate-400 hidden sm:block">
-                Kotlin • Jetpack Compose • Room • SAF • 100% Offline
-              </p>
-            </div>
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-blue-100 selection:text-blue-900">
+      {/* Top App Bar */}
+      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 py-3 flex items-center justify-between shadow-xs">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
+            DH
           </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowAndroidModal(true)}
-              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-700 transition cursor-pointer"
-            >
-              <Smartphone className="w-3.5 h-3.5 text-blue-400" />
-              <span>Android Code & APK</span>
-            </button>
-            <button
-              onClick={handleDirectDownloadZip}
-              disabled={isDownloadingZip}
-              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition shadow-sm cursor-pointer disabled:opacity-50"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{isDownloadingZip ? 'Packing...' : 'Download ZIP'}</span>
-            </button>
+          <div>
+            <span className="font-bold text-base text-slate-900 tracking-tight">DocHub</span>
+            <span className="text-[10px] text-slate-400 ml-1.5 font-mono">v1.0 Offline</span>
           </div>
         </div>
+
+        <button
+          onClick={() => setShowAndroidModal(true)}
+          className="flex items-center gap-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200/80 text-slate-700 px-3 py-1.5 rounded-xl border border-slate-200 transition cursor-pointer"
+        >
+          <Smartphone className="w-3.5 h-3.5 text-blue-600" />
+          <span className="hidden sm:inline">Android APK</span>
+        </button>
       </header>
 
-      {/* Main Screen Container - Styled with Phone Proportion Comfort on Desktop */}
-      <main className="w-full max-w-xl mx-auto flex-1 bg-white shadow-lg sm:my-3 sm:rounded-3xl border border-slate-200/60 overflow-hidden relative flex flex-col">
-        {/* Screen Content View */}
-        <div className="p-4 sm:p-6 flex-1 overflow-y-auto">
-          {activeTab === 'home' && (
-            <HomeScreen
-              documents={documents}
-              history={history}
-              onNavigate={(tab) => setActiveTab(tab)}
-              onImportFiles={handleImportFiles}
-              onSelectDocForPrepare={(doc) => {
-                setSelectedDocForPrepare(doc);
-                setActiveTab('prepare');
-              }}
-              onOpenAndroidModal={() => setShowAndroidModal(true)}
-            />
-          )}
+      {/* Main Screen Content */}
+      <main className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-6">
+        {activeTab === 'home' && (
+          <HomeScreen
+            documents={documents}
+            onNavigate={setActiveTab}
+            onImportFiles={handleImportFiles}
+            onSelectDocForPrepare={(doc) => {
+              setSelectedDocForPrepare(doc);
+              setActiveTab('prepare');
+            }}
+            onOpenAndroidModal={() => setShowAndroidModal(true)}
+          />
+        )}
 
-          {activeTab === 'documents' && (
-            <DocumentsScreen
-              documents={documents}
-              onImportFiles={handleImportFiles}
-              onDeleteDocument={handleDeleteDocument}
-              onToggleFavorite={handleToggleFavorite}
-              onUpdateDocument={handleUpdateDocument}
-              onPrepareDocument={(doc) => {
-                setSelectedDocForPrepare(doc);
-                setActiveTab('prepare');
-              }}
-            />
-          )}
+        {activeTab === 'documents' && (
+          <DocumentsScreen
+            documents={documents}
+            onImportFiles={handleImportFiles}
+            onDeleteDocument={handleDeleteDocument}
+            onToggleFavorite={handleToggleFavorite}
+            onUpdateDocument={handleUpdateDocument}
+            onPrepareDocument={(doc) => {
+              setSelectedDocForPrepare(doc);
+              setActiveTab('prepare');
+            }}
+          />
+        )}
 
-          {activeTab === 'prepare' && (
-            <PrepareScreen
-              documents={documents}
-              presets={presets}
-              selectedDocument={selectedDocForPrepare}
-              onSelectDocument={setSelectedDocForPrepare}
-              onRecordHistory={handleRecordHistory}
-              onSavePreparedAsDocument={async (newDoc) => {
-                await saveDocument(newDoc);
-                setDocuments((prev) => [newDoc, ...prev]);
-              }}
-            />
-          )}
+        {activeTab === 'prepare' && (
+          <PrepareScreen
+            documents={documents}
+            presets={presets}
+            selectedDocument={selectedDocForPrepare}
+            onSelectDocument={setSelectedDocForPrepare}
+            onRecordHistory={handleRecordHistory}
+            onSavePreparedAsDocument={async (newDoc) => {
+              await saveDocument(newDoc);
+              setDocuments((prev) => [newDoc, ...prev]);
+            }}
+          />
+        )}
 
-          {activeTab === 'history' && (
-            <HistoryScreen history={history} onClearHistory={handleClearHistory} />
-          )}
+        {activeTab === 'settings' && (
+          <SettingsScreen
+            documents={documents}
+            onClearCache={handleClearCache}
+            onOpenAndroidModal={() => setShowAndroidModal(true)}
+          />
+        )}
+      </main>
 
-          {activeTab === 'settings' && (
-            <SettingsScreen
-              documents={documents}
-              presets={presets}
-              onClearCache={handleClearCache}
-            />
-          )}
-        </div>
-
-        {/* Android Material 3 Bottom Navigation Bar */}
-        <nav className="sticky bottom-0 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-2 py-2 flex items-center justify-around z-30 shadow-sm">
-          {[
-            { id: 'home', label: 'Home', icon: HomeIcon },
-            { id: 'documents', label: 'Documents', icon: FolderOpen },
-            { id: 'prepare', label: 'Prepare', icon: Wand2 },
-            { id: 'history', label: 'History', icon: HistoryIcon },
-            { id: 'settings', label: 'Settings', icon: SettingsIcon },
-          ].map((item) => {
-            const Icon = item.icon;
-            const isSelected = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id as any)}
-                className={`flex flex-col items-center justify-center py-1 px-3 rounded-2xl transition cursor-pointer ${
-                  isSelected ? 'text-blue-600' : 'text-slate-500 hover:text-slate-800'
+      {/* 4 Bottom Tabs Navigation: Home, Documents, Prepare, Settings */}
+      <nav className="sticky bottom-0 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-2 py-2 flex items-center justify-around z-30 shadow-xs max-w-4xl mx-auto w-full">
+        {[
+          { id: 'home', label: 'Home', icon: HomeIcon },
+          { id: 'documents', label: 'Documents', icon: FolderOpen },
+          { id: 'prepare', label: 'Prepare', icon: Wand2 },
+          { id: 'settings', label: 'Settings', icon: SettingsIcon },
+        ].map((item) => {
+          const Icon = item.icon;
+          const isSelected = activeTab === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id as any)}
+              className={`flex flex-col items-center justify-center py-1 px-4 rounded-2xl transition cursor-pointer ${
+                isSelected ? 'text-blue-600' : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <div
+                className={`px-3.5 py-1 rounded-full transition ${
+                  isSelected ? 'bg-blue-50 text-blue-600' : 'bg-transparent'
                 }`}
               >
-                <div
-                  className={`px-4 py-1 rounded-full transition ${
-                    isSelected ? 'bg-blue-100 text-blue-700' : 'bg-transparent'
-                  }`}
-                >
-                  <Icon className="w-5 h-5" />
-                </div>
-                <span className="text-[11px] font-medium mt-0.5">{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-      </main>
+                <Icon className="w-5 h-5" />
+              </div>
+              <span className="text-[11px] font-semibold mt-0.5">{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
 
       {/* Android Native Project Modal */}
       {showAndroidModal && (

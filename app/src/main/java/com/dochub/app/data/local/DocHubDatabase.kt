@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.dochub.app.data.local.dao.ConversionHistoryDao
 import com.dochub.app.data.local.dao.DocumentDao
@@ -21,7 +22,7 @@ import kotlinx.coroutines.launch
         ConversionHistoryEntity::class,
         PresetEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class DocHubDatabase : RoomDatabase() {
@@ -33,6 +34,12 @@ abstract class DocHubDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: DocHubDatabase? = null
 
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE documents ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
         fun getDatabase(context: Context, scope: CoroutineScope): DocHubDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -40,6 +47,7 @@ abstract class DocHubDatabase : RoomDatabase() {
                     DocHubDatabase::class.java,
                     "dochub_database.db"
                 )
+                .addMigrations(MIGRATION_1_2)
                 .addCallback(DatabaseCallback(scope))
                 .build()
                 INSTANCE = instance

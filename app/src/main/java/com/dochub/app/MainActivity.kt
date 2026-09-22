@@ -23,44 +23,52 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             DocHubTheme {
-                var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
+                val isUnlocked by viewModel.isUnlocked.collectAsState()
 
-                Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    bottomBar = {
-                        NavigationBar {
-                            bottomNavItems.forEach { screen ->
-                                NavigationBarItem(
-                                    selected = currentScreen == screen,
-                                    onClick = { currentScreen = screen },
-                                    icon = { Icon(screen.icon, contentDescription = screen.title) },
-                                    label = { Text(screen.title) }
-                                )
+                if (!isUnlocked) {
+                    LockScreen(viewModel = viewModel)
+                } else {
+                    var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
+
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        bottomBar = {
+                            NavigationBar {
+                                bottomNavItems.forEach { screen ->
+                                    NavigationBarItem(
+                                        selected = currentScreen == screen,
+                                        onClick = { currentScreen = screen },
+                                        icon = { Icon(screen.icon, contentDescription = screen.title) },
+                                        label = { Text(screen.title) }
+                                    )
+                                }
                             }
                         }
-                    }
-                ) { innerPadding ->
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding)
-                    ) {
-                        when (currentScreen) {
-                            Screen.Home -> HomeScreen(
-                                viewModel = viewModel,
-                                onNavigateToDocuments = { currentScreen = Screen.Documents },
-                                onNavigateToPrepare = { currentScreen = Screen.Prepare }
-                            )
-                            Screen.Documents -> DocumentsScreen(
-                                viewModel = viewModel,
-                                onPrepareDocument = { doc ->
-                                    viewModel.selectedDocument.value = doc
-                                    currentScreen = Screen.Prepare
-                                }
-                            )
-                            Screen.Prepare -> PrepareScreen(viewModel = viewModel)
-                            Screen.History -> HistoryScreen(viewModel = viewModel)
-                            Screen.Settings -> SettingsScreen(viewModel = viewModel)
+                    ) { innerPadding ->
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(innerPadding)
+                        ) {
+                            when (currentScreen) {
+                                Screen.Home -> HomeScreen(
+                                    viewModel = viewModel,
+                                    onNavigateToDocuments = { currentScreen = Screen.Documents },
+                                    onNavigateToPrepare = { currentScreen = Screen.Prepare },
+                                    onOpenDocument = { doc ->
+                                        viewModel.selectedDocument.value = doc
+                                    }
+                                )
+                                Screen.Documents -> DocumentsScreen(
+                                    viewModel = viewModel,
+                                    onPrepareDocument = { doc ->
+                                        viewModel.selectedDocument.value = doc
+                                        currentScreen = Screen.Prepare
+                                    }
+                                )
+                                Screen.Prepare -> PrepareScreen(viewModel = viewModel)
+                                Screen.Settings -> SettingsScreen(viewModel = viewModel)
+                            }
                         }
                     }
                 }

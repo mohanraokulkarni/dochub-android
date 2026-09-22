@@ -16,6 +16,7 @@ data class DocumentEntity(
     val category: String = "Personal",
     val tags: String = "", // Comma-separated
     val favorite: Boolean = false,
+    val encrypted: Boolean = true,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )

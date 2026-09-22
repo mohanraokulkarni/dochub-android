@@ -2,7 +2,11 @@ package com.dochub.app.engine
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.Rect
 import com.dochub.app.data.storage.FileManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -37,21 +41,25 @@ class ImageProcessor(private val fileManager: FileManager) {
         }
     }
 
+    private fun decodeBitmapSafely(sourceFile: File): Bitmap? {
+        return try {
+            fileManager.openDecryptedStream(sourceFile).use { inStream ->
+                BitmapFactory.decodeStream(inStream)
+            }
+        } catch (_: Exception) {
+            BitmapFactory.decodeFile(sourceFile.absolutePath)
+        }
+    }
+
     /**
-     * Real Smart Progressive Target-Size Compression (Section 10 specification)
-     * 1. Decode bitmap safely
-     * 2. Resize to requested dimensions if provided
-     * 3. Progressively reduce JPEG quality (95 -> 10)
-     * 4. If still above target size, downscale dimensions slightly (0.9x, 0.8x)
-     * 5. Stop when target is achieved
-     * 6. Strictly verify actual output file
+     * Real Progressive Target-Size Compression
      */
     suspend fun compressToTargetSize(
         sourceFile: File,
         targetFormat: String = "JPG", // JPG or PNG
         targetWidth: Int? = null,
         targetHeight: Int? = null,
-        maxFileSizeBytes: Long, // e.g. 100 * 1024L
+        maxFileSizeBytes: Long,
         baseOutputName: String = "processed_image"
     ): ImageProcessResult = withContext(Dispatchers.IO) {
         val originalSize = sourceFile.length()
@@ -68,8 +76,7 @@ class ImageProcessor(private val fileManager: FileManager) {
             )
         }
 
-        // Decode source bitmap
-        var bitmap = BitmapFactory.decodeFile(sourceFile.absolutePath)
+        var bitmap = decodeBitmapSafely(sourceFile)
             ?: return@withContext ImageProcessResult(
                 success = false,
                 outputFile = sourceFile,
@@ -78,10 +85,9 @@ class ImageProcessor(private val fileManager: FileManager) {
                 originalSizeBytes = originalSize,
                 outputSizeBytes = 0,
                 compressionRatio = 0f,
-                errorMessage = "Unable to decode image file. File may be corrupted or in an unsupported format."
+                errorMessage = "Unable to decode image file. File may be corrupted or unsupported."
             )
 
-        // 1. Initial Resize if requested
         if (targetWidth != null && targetHeight != null && targetWidth > 0 && targetHeight > 0) {
             bitmap = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
         }
@@ -101,7 +107,6 @@ class ImageProcessor(private val fileManager: FileManager) {
         var currentBitmap = bitmap
         var achieved = false
 
-        // Progressive quality loop
         while (quality >= 15) {
             FileOutputStream(outputFile).use { outStream ->
                 currentBitmap.compress(compressFormat, quality, outStream)
@@ -114,7 +119,6 @@ class ImageProcessor(private val fileManager: FileManager) {
             quality -= 10
         }
 
-        // If still exceeding target size and format is JPEG, gently scale down dimensions
         if (!achieved && compressFormat == Bitmap.CompressFormat.JPEG) {
             var scale = 0.9f
             while (scale >= 0.5f && !achieved) {
@@ -138,7 +142,6 @@ class ImageProcessor(private val fileManager: FileManager) {
             }
         }
 
-        // Verify actual output
         val finalSize = outputFile.length()
         if (!outputFile.exists() || finalSize <= 0) {
             return@withContext ImageProcessResult(
@@ -169,12 +172,101 @@ class ImageProcessor(private val fileManager: FileManager) {
     }
 
     /**
-     * Rotate bitmap by angle (90, 180, 270)
+     * Crops image given rectangular crop coordinates.
+     */
+    suspend fun cropImage(
+        sourceFile: File,
+        cropLeft: Int,
+        cropTop: Int,
+        cropWidth: Int,
+        cropHeight: Int,
+        targetFormat: String = "JPG",
+        baseOutputName: String = "cropped_image"
+    ): ImageProcessResult = withContext(Dispatchers.IO) {
+        val originalSize = sourceFile.length()
+        val bitmap = decodeBitmapSafely(sourceFile)
+            ?: return@withContext ImageProcessResult(
+                false, sourceFile, 0, 0, originalSize, 0, 0f, "Failed to decode bitmap"
+            )
+
+        val safeLeft = cropLeft.coerceIn(0, bitmap.width - 1)
+        val safeTop = cropTop.coerceIn(0, bitmap.height - 1)
+        val safeW = cropWidth.coerceIn(1, bitmap.width - safeLeft)
+        val safeH = cropHeight.coerceIn(1, bitmap.height - safeTop)
+
+        val cropped = Bitmap.createBitmap(bitmap, safeLeft, safeTop, safeW, safeH)
+
+        val ext = if (targetFormat.equals("PNG", true)) "png" else "jpg"
+        val format = if (targetFormat.equals("PNG", true)) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
+        val outputFile = fileManager.createOutputFile(baseOutputName, ext)
+
+        FileOutputStream(outputFile).use { out ->
+            cropped.compress(format, 95, out)
+        }
+
+        ImageProcessResult(
+            success = outputFile.exists() && outputFile.length() > 0,
+            outputFile = outputFile,
+            outputWidth = cropped.width,
+            outputHeight = cropped.height,
+            originalSizeBytes = originalSize,
+            outputSizeBytes = outputFile.length(),
+            compressionRatio = 0f
+        )
+    }
+
+    /**
+     * Converts format between JPG and PNG with optional solid background for PNG transparency.
+     */
+    suspend fun convertFormat(
+        sourceFile: File,
+        targetFormat: String, // "JPG" or "PNG"
+        backgroundColorInt: Int = Color.WHITE,
+        baseOutputName: String = "converted_image"
+    ): ImageProcessResult = withContext(Dispatchers.IO) {
+        val originalSize = sourceFile.length()
+        val bitmap = decodeBitmapSafely(sourceFile)
+            ?: return@withContext ImageProcessResult(
+                false, sourceFile, 0, 0, originalSize, 0, 0f, "Failed to decode source image"
+            )
+
+        val isTargetJpg = targetFormat.equals("JPG", true) || targetFormat.equals("JPEG", true)
+        val ext = if (isTargetJpg) "jpg" else "png"
+        val compressFormat = if (isTargetJpg) Bitmap.CompressFormat.JPEG else Bitmap.CompressFormat.PNG
+
+        val outputBitmap = if (isTargetJpg && bitmap.hasAlpha()) {
+            val solid = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(solid)
+            canvas.drawColor(backgroundColorInt)
+            canvas.drawBitmap(bitmap, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
+            solid
+        } else {
+            bitmap
+        }
+
+        val outputFile = fileManager.createOutputFile(baseOutputName, ext)
+        FileOutputStream(outputFile).use { out ->
+            outputBitmap.compress(compressFormat, 95, out)
+        }
+
+        ImageProcessResult(
+            success = outputFile.exists() && outputFile.length() > 0,
+            outputFile = outputFile,
+            outputWidth = outputBitmap.width,
+            outputHeight = outputBitmap.height,
+            originalSizeBytes = originalSize,
+            outputSizeBytes = outputFile.length(),
+            compressionRatio = 0f
+        )
+    }
+
+    /**
+     * Rotates bitmap by angle (90, 180, 270).
      */
     suspend fun rotateImage(sourceFile: File, degrees: Float, baseOutputName: String): ImageProcessResult =
         withContext(Dispatchers.IO) {
             val originalSize = sourceFile.length()
-            val bitmap = BitmapFactory.decodeFile(sourceFile.absolutePath)
+            val bitmap = decodeBitmapSafely(sourceFile)
                 ?: return@withContext ImageProcessResult(
                     false, sourceFile, 0, 0, originalSize, 0, 0f, "Failed to decode source bitmap"
                 )
@@ -182,14 +274,15 @@ class ImageProcessor(private val fileManager: FileManager) {
             val matrix = Matrix().apply { postRotate(degrees) }
             val rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
 
-            val outputFile = fileManager.createOutputFile(baseOutputName, sourceFile.extension)
+            val ext = if (sourceFile.extension.equals("png", true)) "png" else "jpg"
+            val outputFile = fileManager.createOutputFile(baseOutputName, ext)
             FileOutputStream(outputFile).use { out ->
-                val format = if (sourceFile.extension.equals("png", true)) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
+                val format = if (ext == "png") Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
                 rotatedBitmap.compress(format, 92, out)
             }
 
             ImageProcessResult(
-                success = true,
+                success = outputFile.exists() && outputFile.length() > 0,
                 outputFile = outputFile,
                 outputWidth = rotatedBitmap.width,
                 outputHeight = rotatedBitmap.height,
