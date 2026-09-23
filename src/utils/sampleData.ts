@@ -2,92 +2,92 @@ import { StoredDocument } from '../types';
 
 export function createSamplePhotoDataUrl(): string {
   const canvas = document.createElement('canvas');
-  canvas.width = 1200;
-  canvas.height = 1600;
+  canvas.width = 900;
+  canvas.height = 1200;
   const ctx = canvas.getContext('2d');
   if (!ctx) return '';
 
   // Background
-  const gradient = ctx.createLinearGradient(0, 0, 1200, 1600);
+  const gradient = ctx.createLinearGradient(0, 0, 900, 1200);
   gradient.addColorStop(0, '#E2E8F0');
   gradient.addColorStop(1, '#CBD5E1');
   ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 1200, 1600);
+  ctx.fillRect(0, 0, 900, 1200);
 
   // Border frame
-  ctx.lineWidth = 16;
+  ctx.lineWidth = 12;
   ctx.strokeStyle = '#94A3B8';
-  ctx.strokeRect(40, 40, 1120, 1520);
+  ctx.strokeRect(30, 30, 840, 1140);
 
   // Silhouette / ID Avatar placeholder
   ctx.fillStyle = '#64748B';
   // Head
   ctx.beginPath();
-  ctx.arc(600, 600, 220, 0, Math.PI * 2);
+  ctx.arc(450, 450, 160, 0, Math.PI * 2);
   ctx.fill();
 
   // Shoulders
   ctx.beginPath();
-  ctx.ellipse(600, 1200, 450, 320, 0, 0, Math.PI * 2);
+  ctx.ellipse(450, 900, 340, 240, 0, 0, Math.PI * 2);
   ctx.fill();
 
   // Badge Header
   ctx.fillStyle = '#1E3A8A';
-  ctx.fillRect(80, 80, 1040, 160);
+  ctx.fillRect(60, 60, 780, 120);
   ctx.fillStyle = '#FFFFFF';
-  ctx.font = 'bold 56px sans-serif';
+  ctx.font = 'bold 42px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('OFFICIAL IDENTITY SPECIMEN', 600, 180);
+  ctx.fillText('OFFICIAL IDENTITY SPECIMEN', 450, 135);
 
   // Document Footer details
   ctx.fillStyle = '#334155';
-  ctx.font = 'bold 36px monospace';
-  ctx.fillText('DOC-ID: #DH-984210-ORIGINAL', 600, 1420);
-  ctx.font = '32px sans-serif';
-  ctx.fillText('Dimensions: 1200 × 1600 px • Source: High-Res Camera Capture', 600, 1480);
+  ctx.font = 'bold 28px monospace';
+  ctx.fillText('DOC-ID: #DH-984210-ORIGINAL', 450, 1070);
+  ctx.font = '24px sans-serif';
+  ctx.fillText('Dimensions: 900 × 1200 px • Offline Encrypted', 450, 1115);
 
-  return canvas.toDataURL('image/jpeg', 0.95);
+  return canvas.toDataURL('image/jpeg', 0.9);
 }
 
 export function createSampleCertificateDataUrl(): string {
   const canvas = document.createElement('canvas');
-  canvas.width = 1200;
-  canvas.height = 850;
+  canvas.width = 1000;
+  canvas.height = 700;
   const ctx = canvas.getContext('2d');
   if (!ctx) return '';
 
   ctx.fillStyle = '#FAF5FF';
-  ctx.fillRect(0, 0, 1200, 850);
+  ctx.fillRect(0, 0, 1000, 700);
 
-  ctx.lineWidth = 12;
+  ctx.lineWidth = 10;
   ctx.strokeStyle = '#7E22CE';
-  ctx.strokeRect(30, 30, 1140, 790);
+  ctx.strokeRect(25, 25, 950, 650);
 
   ctx.fillStyle = '#581C87';
-  ctx.font = 'bold 52px serif';
+  ctx.font = 'bold 42px serif';
   ctx.textAlign = 'center';
-  ctx.fillText('CERTIFICATE OF ACADEMIC COMPLETION', 600, 160);
+  ctx.fillText('CERTIFICATE OF ACADEMIC COMPLETION', 500, 130);
 
   ctx.fillStyle = '#374151';
-  ctx.font = '28px sans-serif';
-  ctx.fillText('This certifies the successful verification of all graduation requirements.', 600, 320);
+  ctx.font = '22px sans-serif';
+  ctx.fillText('This certifies the successful verification of all graduation requirements.', 500, 250);
 
   ctx.fillStyle = '#1F2937';
-  ctx.font = 'bold 42px serif';
-  ctx.fillText('Candidate Name: Alex Johnson', 600, 450);
+  ctx.font = 'bold 34px serif';
+  ctx.fillText('Candidate Name: Alex Johnson', 500, 360);
 
   ctx.fillStyle = '#6B7280';
-  ctx.font = '24px monospace';
-  ctx.fillText('ACADEMIC YEAR: 2025-2026 • REGISTRATION #8849-AC', 600, 560);
+  ctx.font = '20px monospace';
+  ctx.fillText('ACADEMIC YEAR: 2025-2026 • REGISTRATION #8849-AC', 500, 450);
 
   // Signature box
   ctx.fillStyle = '#E5E7EB';
-  ctx.fillRect(400, 680, 400, 3);
+  ctx.fillRect(350, 550, 300, 3);
   ctx.fillStyle = '#4B5563';
-  ctx.font = 'italic 26px serif';
-  ctx.fillText('Authorized Signature', 600, 720);
+  ctx.font = 'italic 22px serif';
+  ctx.fillText('Authorized Signature', 500, 590);
 
-  return canvas.toDataURL('image/jpeg', 0.92);
+  return canvas.toDataURL('image/jpeg', 0.9);
 }
 
 export function getInitialSeedDocuments(): StoredDocument[] {

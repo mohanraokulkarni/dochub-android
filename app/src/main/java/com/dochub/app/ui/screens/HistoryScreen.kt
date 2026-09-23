@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import com.dochub.app.data.local.entity.ConversionHistoryEntity
 import com.dochub.app.ui.viewmodel.DocHubViewModel
 import java.io.File
 import java.text.SimpleDateFormat
@@ -24,7 +25,7 @@ import java.util.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(viewModel: DocHubViewModel) {
-    val historyList by viewModel.allHistory.collectAsState()
+    val historyList: List<ConversionHistoryEntity> by viewModel.allHistory.collectAsState()
     val context = LocalContext.current
     var showClearDialog by remember { mutableStateOf(false) }
 

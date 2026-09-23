@@ -7,6 +7,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.dochub.app.DocHubApplication
+import com.dochub.app.data.local.entity.ConversionHistoryEntity
 import com.dochub.app.data.local.entity.DocumentEntity
 import com.dochub.app.data.local.entity.PresetEntity
 import com.dochub.app.engine.ImageProcessor
@@ -102,6 +103,8 @@ class DocHubViewModel(application: Application) : AndroidViewModel(application) 
 
     val recentDocuments = docRepo.recentDocuments.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val allPresets = presetRepo.allPresets.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val allHistory: StateFlow<List<ConversionHistoryEntity>> = historyRepo.allHistory
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Prepare & Selection State
     val selectedDocument = MutableStateFlow<DocumentEntity?>(null)
@@ -306,6 +309,19 @@ class DocHubViewModel(application: Application) : AndroidViewModel(application) 
             val freed = fileManager.clearTemporaryFiles()
             refreshStorageUsage()
             statusMessage.value = "Freed ${freed / 1024} KB temporary files"
+        }
+    }
+
+    fun clearHistory() {
+        viewModelScope.launch {
+            historyRepo.clearHistory()
+            statusMessage.value = "Conversion history cleared"
+        }
+    }
+
+    fun deleteHistory(item: ConversionHistoryEntity) {
+        viewModelScope.launch {
+            historyRepo.deleteHistory(item)
         }
     }
 }

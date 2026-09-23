@@ -14,7 +14,29 @@ const PAGE_DIMENSIONS = {
 };
 
 /**
- * Creates a real valid multi-page PDF locally from image data URLs using pdf-lib.
+ * Fast typed-array conversion from base64 string, avoiding expensive array allocations.
+ */
+export function base64ToUint8Array(base64: string): Uint8Array {
+  const cleanBase64 = base64.includes(',') ? base64.split(',')[1] : base64;
+  const binaryString = atob(cleanBase64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Fast multi-page PDF generation locally from image data URLs using pdf-lib.
  */
 export async function imagesToPdf(
   images: { dataUrl: string; name: string }[],
@@ -26,10 +48,7 @@ export async function imagesToPdf(
   for (const item of images) {
     const page = pdfDoc.addPage([pageW, pageH]);
     const isPng = item.dataUrl.startsWith('data:image/png');
-
-    // Convert data URL to bytes
-    const base64Data = item.dataUrl.split(',')[1];
-    const imageBytes = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
+    const imageBytes = base64ToUint8Array(item.dataUrl);
 
     const embeddedImage = isPng
       ? await pdfDoc.embedPng(imageBytes)
@@ -70,13 +89,9 @@ export async function imagesToPdf(
     });
   }
 
-  const pdfBytes = await pdfDoc.save();
+  const pdfBytes = await pdfDoc.save({ useObjectStreams: true });
   const blob = new Blob([pdfBytes as unknown as BlobPart], { type: 'application/pdf' });
-  const dataUrl = await new Promise<string>((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.readAsDataURL(blob);
-  });
+  const dataUrl = await blobToDataUrl(blob);
 
   return {
     dataUrl,
@@ -95,20 +110,15 @@ export async function mergePdfs(
   const mergedPdf = await PDFDocument.create();
 
   for (const dataUrl of pdfDataUrls) {
-    const base64 = dataUrl.split(',')[1];
-    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    const bytes = base64ToUint8Array(dataUrl);
     const doc = await PDFDocument.load(bytes);
     const copiedPages = await mergedPdf.copyPages(doc, doc.getPageIndices());
     copiedPages.forEach((page) => mergedPdf.addPage(page));
   }
 
-  const pdfBytes = await mergedPdf.save();
+  const pdfBytes = await mergedPdf.save({ useObjectStreams: true });
   const blob = new Blob([pdfBytes as unknown as BlobPart], { type: 'application/pdf' });
-  const outUrl = await new Promise<string>((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.readAsDataURL(blob);
-  });
+  const outUrl = await blobToDataUrl(blob);
 
   return {
     dataUrl: outUrl,
@@ -125,8 +135,7 @@ export async function splitPdf(
   pdfDataUrl: string,
   pageNumbers1Indexed: number[]
 ): Promise<{ dataUrl: string; blob: Blob; sizeBytes: number; pageCount: number }> {
-  const base64 = pdfDataUrl.split(',')[1];
-  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const bytes = base64ToUint8Array(pdfDataUrl);
   const sourceDoc = await PDFDocument.load(bytes);
 
   const subDoc = await PDFDocument.create();
@@ -139,18 +148,42 @@ export async function splitPdf(
   const pages = await subDoc.copyPages(sourceDoc, zeroIndexed);
   pages.forEach((p) => subDoc.addPage(p));
 
-  const pdfBytes = await subDoc.save();
+  const pdfBytes = await subDoc.save({ useObjectStreams: true });
   const blob = new Blob([pdfBytes as unknown as BlobPart], { type: 'application/pdf' });
-  const outUrl = await new Promise<string>((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.readAsDataURL(blob);
-  });
+  const outUrl = await blobToDataUrl(blob);
 
   return {
     dataUrl: outUrl,
     blob,
     sizeBytes: blob.size,
     pageCount: subDoc.getPageCount(),
+  };
+}
+
+/**
+ * Fast local PDF compression and object stream optimization.
+ */
+export async function compressPdf(
+  pdfDataUrl: string
+): Promise<{ dataUrl: string; blob: Blob; sizeBytes: number; pageCount: number; reductionPercentage: number }> {
+  const bytes = base64ToUint8Array(pdfDataUrl);
+  const originalSize = bytes.length;
+
+  const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+  const pdfBytes = await doc.save({
+    useObjectStreams: true,
+    addDefaultPage: false,
+  });
+
+  const blob = new Blob([pdfBytes as unknown as BlobPart], { type: 'application/pdf' });
+  const outUrl = await blobToDataUrl(blob);
+  const reduction = originalSize > 0 ? Math.max(0, Math.round(((originalSize - blob.size) / originalSize) * 100)) : 0;
+
+  return {
+    dataUrl: outUrl,
+    blob,
+    sizeBytes: blob.size,
+    pageCount: doc.getPageCount(),
+    reductionPercentage: reduction,
   };
 }

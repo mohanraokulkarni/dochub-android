@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
                                 Screen.Prepare -> PrepareScreen(viewModel = viewModel)
+                                Screen.History -> HistoryScreen(viewModel = viewModel)
                                 Screen.Settings -> SettingsScreen(viewModel = viewModel)
                             }
                         }

@@ -595,6 +595,7 @@ class MainActivity : ComponentActivity() {
                                 Screen.Home -> HomeScreen(viewModel, onNavigateToDocuments = { currentScreen = Screen.Documents }, onNavigateToPrepare = { currentScreen = Screen.Prepare })
                                 Screen.Documents -> DocumentsScreen(viewModel, onPrepareDocument = { doc -> viewModel.selectedDocument.value = doc; currentScreen = Screen.Prepare })
                                 Screen.Prepare -> PrepareScreen(viewModel)
+                                Screen.History -> HistoryScreen(viewModel)
                                 Screen.Settings -> SettingsScreen(viewModel)
                             }
                         }
