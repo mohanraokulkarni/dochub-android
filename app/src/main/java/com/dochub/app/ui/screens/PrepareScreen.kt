@@ -469,6 +469,8 @@ fun PrepareScreen(viewModel: DocHubViewModel) {
                             if (doc != null) {
                                 val sourceFile = File(doc.localPath)
                                 when (currentTool) {
+                                    PrepareTool.MERGE_PDF -> Unit
+
                                     PrepareTool.SMART_PRESET -> {
                                         val targetPreset = selectedPreset ?: presets.firstOrNull()
                                         if (targetPreset != null) {
