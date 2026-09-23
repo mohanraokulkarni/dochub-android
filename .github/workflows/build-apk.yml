@@ -34,11 +34,14 @@ jobs:
           # Install only the required SDK components (no 'tools', no TV, no XR, no emulators)
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Clean local Gradle cache
+        run: rm -rf .gradle
+
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
       - name: Build Debug APK with Gradle
-        run: ./gradlew assembleDebug
+        run: ./gradlew clean assembleDebug --no-daemon
 
       - name: Verify APK file exists
         run: |
