@@ -103,6 +103,7 @@ class DocHubViewModel(application: Application) : AndroidViewModel(application) 
 
     val recentDocuments = docRepo.recentDocuments.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val allPresets = presetRepo.allPresets.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val presets: StateFlow<List<PresetEntity>> = allPresets
     val allHistory: StateFlow<List<ConversionHistoryEntity>> = historyRepo.allHistory
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -366,5 +367,13 @@ class DocHubViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             historyRepo.deleteHistory(item)
         }
+    }
+
+    suspend fun prepareWithPreset(sourceFile: File, preset: PresetEntity): SmartPreparer.PreparationResult {
+        return smartPreparer.prepareDocumentWithPreset(sourceFile, preset)
+    }
+
+    suspend fun mergePdfs(pdfFiles: List<File>, outputBaseName: String = "Merged_Document"): PdfProcessor.PdfProcessResult {
+        return pdfProcessor.mergePdfs(pdfFiles, outputBaseName)
     }
 }

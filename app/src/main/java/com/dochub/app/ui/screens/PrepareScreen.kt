@@ -238,14 +238,14 @@ fun PrepareScreen(viewModel: DocHubViewModel) {
                         // Step 1: Select Source Document
                         Text("1. Source Document", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                         var docDropdownExpanded by remember { mutableStateOf(false) }
-                        val currentSelection = selectedDoc ?: documents.first()
+                        val currentSelection = selectedDoc ?: documents.firstOrNull()
 
                         Box {
                             OutlinedButton(
                                 onClick = { docDropdownExpanded = true },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(currentSelection.displayName, maxLines = 1)
+                                Text(currentSelection?.displayName ?: "No document", maxLines = 1)
                             }
 
                             DropdownMenu(
@@ -440,7 +440,7 @@ fun PrepareScreen(viewModel: DocHubViewModel) {
                                     .map { File(it.localPath) }
 
                                 if (selectedPdfFiles.size >= 2) {
-                                    val res = viewModel.pdfProcessor.mergePdfs(
+                                    val res = viewModel.mergePdfs(
                                         selectedPdfFiles,
                                         outputBaseName = "Merged_Document"
                                     )
@@ -472,7 +472,7 @@ fun PrepareScreen(viewModel: DocHubViewModel) {
                                     PrepareTool.SMART_PRESET -> {
                                         val targetPreset = selectedPreset ?: presets.firstOrNull()
                                         if (targetPreset != null) {
-                                            val result = viewModel.smartPreparer.prepareDocumentWithPreset(sourceFile, targetPreset)
+                                            val result = viewModel.prepareWithPreset(sourceFile, targetPreset)
                                             smartResultDialog = result
                                             if (result.isSuccess && result.outputFile != null) {
                                                 viewModel.saveAsCopy(
