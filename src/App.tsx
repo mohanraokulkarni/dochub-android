@@ -3,6 +3,7 @@ import {
   Home as HomeIcon,
   FolderOpen,
   Wand2,
+  Clock,
   Settings as SettingsIcon,
   Smartphone,
   Download,
@@ -26,12 +27,13 @@ import { StoredDocument, Preset, ConversionRecord, DocumentCategory, AppLockMode
 import { HomeScreen } from './components/HomeScreen';
 import { DocumentsScreen } from './components/DocumentsScreen';
 import { PrepareScreen } from './components/PrepareScreen';
+import { HistoryScreen } from './components/HistoryScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { AndroidProjectExplorer } from './components/AndroidProjectExplorer';
 import { downloadAndroidProjectZip } from './utils/androidProjectZip';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'home' | 'documents' | 'prepare' | 'settings'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'documents' | 'prepare' | 'history' | 'settings'>('home');
   const [documents, setDocuments] = useState<StoredDocument[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [history, setHistory] = useState<ConversionRecord[]>([]);
@@ -270,6 +272,16 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'history' && (
+          <HistoryScreen
+            history={history}
+            onClearHistory={async () => {
+              await clearAllHistory();
+              setHistory([]);
+            }}
+          />
+        )}
+
         {activeTab === 'settings' && (
           <SettingsScreen
             documents={documents}
@@ -279,12 +291,13 @@ export default function App() {
         )}
       </main>
 
-      {/* 4 Bottom Tabs Navigation: Home, Documents, Prepare, Settings */}
+      {/* 5 Bottom Tabs Navigation: Home, Documents, Prepare, History, Settings */}
       <nav className="sticky bottom-0 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-2 py-2 flex items-center justify-around z-30 shadow-xs max-w-4xl mx-auto w-full">
         {[
           { id: 'home', label: 'Home', icon: HomeIcon },
           { id: 'documents', label: 'Documents', icon: FolderOpen },
           { id: 'prepare', label: 'Prepare', icon: Wand2 },
+          { id: 'history', label: 'History', icon: Clock },
           { id: 'settings', label: 'Settings', icon: SettingsIcon },
         ].map((item) => {
           const Icon = item.icon;

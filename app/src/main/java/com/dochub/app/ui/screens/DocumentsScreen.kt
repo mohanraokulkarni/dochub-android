@@ -50,6 +50,9 @@ fun DocumentsScreen(
     var activeDetailDoc by remember { mutableStateOf<DocumentEntity?>(null) }
     var renameDoc by remember { mutableStateOf<DocumentEntity?>(null) }
     var newRenameText by remember { mutableStateOf("") }
+    var editDetailsDoc by remember { mutableStateOf<DocumentEntity?>(null) }
+    var editCategoryText by remember { mutableStateOf("") }
+    var editTagsText by remember { mutableStateOf("") }
     var deleteConfirmDoc by remember { mutableStateOf<DocumentEntity?>(null) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
 
@@ -328,6 +331,9 @@ fun DocumentsScreen(
 
                     Spacer(Modifier.height(4.dp))
                     Text("Category: ${doc.category}", fontSize = 13.sp)
+                    if (doc.tags.isNotBlank()) {
+                        Text("Tags: ${doc.tags}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     Text("Format: .${doc.extension.uppercase()} (${doc.mimeType})", fontSize = 13.sp)
                     Text("File Size: ${doc.sizeBytes / 1024} KB", fontSize = 13.sp)
                     val dateStr = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()).format(Date(doc.updatedAt))
@@ -350,6 +356,15 @@ fun DocumentsScreen(
                     }
 
                     Row {
+                        TextButton(onClick = {
+                            activeDetailDoc = null
+                            editDetailsDoc = doc
+                            editCategoryText = doc.category
+                            editTagsText = doc.tags
+                        }) {
+                            Text("Category")
+                        }
+
                         TextButton(onClick = {
                             activeDetailDoc = null
                             newRenameText = doc.displayName
@@ -378,6 +393,49 @@ fun DocumentsScreen(
             dismissButton = {
                 TextButton(onClick = { activeDetailDoc = null }) {
                     Text("Close")
+                }
+            }
+        )
+    }
+
+    // Edit Category & Tags Dialog
+    editDetailsDoc?.let { doc ->
+        AlertDialog(
+            onDismissRequest = { editDetailsDoc = null },
+            title = { Text("Edit Category & Tags") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Select Category:", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(viewModel.categories.filter { it != "All" }) { cat ->
+                            FilterChip(
+                                selected = editCategoryText.equals(cat, ignoreCase = true),
+                                onClick = { editCategoryText = cat },
+                                label = { Text(cat) }
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = editTagsText,
+                        onValueChange = { editTagsText = it },
+                        label = { Text("Tags (comma separated)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.updateCategoryAndTags(doc, editCategoryText, editTagsText)
+                    editDetailsDoc = null
+                }) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editDetailsDoc = null }) {
+                    Text("Cancel")
                 }
             }
         )

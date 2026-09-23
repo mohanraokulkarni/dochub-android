@@ -16,5 +16,6 @@ val bottomNavItems = listOf(
     Screen.Home,
     Screen.Documents,
     Screen.Prepare,
+    Screen.History,
     Screen.Settings
 )

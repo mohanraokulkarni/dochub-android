@@ -231,6 +231,25 @@ class DocHubViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
+     * Updates document category and tags.
+     */
+    fun updateCategoryAndTags(document: DocumentEntity, newCategory: String, newTags: String) {
+        viewModelScope.launch {
+            try {
+                val updated = document.copy(
+                    category = newCategory.trim(),
+                    tags = newTags.trim(),
+                    updatedAt = System.currentTimeMillis()
+                )
+                docRepo.updateDocument(updated)
+                statusMessage.value = "Updated document details"
+            } catch (e: Exception) {
+                statusMessage.value = "Update failed: ${e.message}"
+            }
+        }
+    }
+
+    /**
      * Exports an encrypted document to user-selected SAF Uri.
      */
     fun exportDocument(document: DocumentEntity, targetUri: Uri) {
@@ -316,6 +335,30 @@ class DocHubViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             historyRepo.clearHistory()
             statusMessage.value = "Conversion history cleared"
+        }
+    }
+
+    fun recordConversion(
+        sourcePath: String,
+        outputPath: String,
+        operation: String,
+        parameters: String,
+        status: String,
+        originalSizeBytes: Long,
+        outputSizeBytes: Long
+    ) {
+        viewModelScope.launch {
+            historyRepo.recordConversion(
+                ConversionHistoryEntity(
+                    sourcePath = sourcePath,
+                    outputPath = outputPath,
+                    operation = operation,
+                    parameters = parameters,
+                    status = status,
+                    originalSizeBytes = originalSizeBytes,
+                    outputSizeBytes = outputSizeBytes
+                )
+            )
         }
     }
 

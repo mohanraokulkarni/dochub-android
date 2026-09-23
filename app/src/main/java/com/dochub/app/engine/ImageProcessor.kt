@@ -41,6 +41,27 @@ class ImageProcessor(private val fileManager: FileManager) {
         }
     }
 
+    /**
+     * Gets image dimensions without keeping full bitmap in memory if possible.
+     */
+    fun getImageDimensions(sourceFile: File): Dimensions? {
+        return try {
+            fileManager.openDecryptedStream(sourceFile).use { inStream ->
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeStream(inStream, null, options)
+                if (options.outWidth > 0 && options.outHeight > 0) {
+                    Dimensions(options.outWidth, options.outHeight)
+                } else null
+            }
+        } catch (_: Exception) {
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(sourceFile.absolutePath, options)
+            if (options.outWidth > 0 && options.outHeight > 0) {
+                Dimensions(options.outWidth, options.outHeight)
+            } else null
+        }
+    }
+
     private fun decodeBitmapSafely(sourceFile: File): Bitmap? {
         return try {
             fileManager.openDecryptedStream(sourceFile).use { inStream ->
@@ -291,4 +312,41 @@ class ImageProcessor(private val fileManager: FileManager) {
                 compressionRatio = 0f
             )
         }
+
+    /**
+     * Resizes an image to specified width and height.
+     */
+    suspend fun resizeImage(
+        sourceFile: File,
+        targetWidth: Int,
+        targetHeight: Int,
+        targetFormat: String = "JPG",
+        baseOutputName: String = "resized_image"
+    ): ImageProcessResult = withContext(Dispatchers.IO) {
+        val originalSize = sourceFile.length()
+        val bitmap = decodeBitmapSafely(sourceFile)
+            ?: return@withContext ImageProcessResult(
+                false, sourceFile, 0, 0, originalSize, 0, 0f, "Failed to decode source bitmap"
+            )
+
+        val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
+        val isPng = targetFormat.equals("PNG", true)
+        val ext = if (isPng) "png" else "jpg"
+        val format = if (isPng) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
+        val outputFile = fileManager.createOutputFile(baseOutputName, ext)
+
+        FileOutputStream(outputFile).use { out ->
+            scaled.compress(format, 95, out)
+        }
+
+        ImageProcessResult(
+            success = outputFile.exists() && outputFile.length() > 0,
+            outputFile = outputFile,
+            outputWidth = scaled.width,
+            outputHeight = scaled.height,
+            originalSizeBytes = originalSize,
+            outputSizeBytes = outputFile.length(),
+            compressionRatio = 0f
+        )
+    }
 }

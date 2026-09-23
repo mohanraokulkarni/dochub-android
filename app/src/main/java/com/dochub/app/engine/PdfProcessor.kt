@@ -38,6 +38,28 @@ class PdfProcessor(private val fileManager: FileManager) {
     }
 
     /**
+     * Gets the page count of a PDF file safely, decrypting if necessary.
+     */
+    suspend fun getPdfPageCount(pdfFile: File): Int = withContext(Dispatchers.IO) {
+        val tempSource = if (fileManager.cryptoManager.isFileEncrypted(pdfFile)) {
+            fileManager.createTempDecryptedCopy(pdfFile)
+        } else {
+            pdfFile
+        }
+        try {
+            ParcelFileDescriptor.open(tempSource, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                PdfRenderer(pfd).use { renderer ->
+                    renderer.pageCount
+                }
+            }
+        } catch (_: Exception) {
+            0
+        } finally {
+            if (tempSource != pdfFile) tempSource.delete()
+        }
+    }
+
+    /**
      * Converts single or multiple image files into a single multi-page PDF document.
      * Uses Android's native android.graphics.pdf.PdfDocument.
      */
@@ -364,6 +386,203 @@ class PdfProcessor(private val fileManager: FileManager) {
         } catch (e: Exception) {
             PdfProcessResult(false, emptyList(), 0, 0, e.message ?: "Failed splitting PDF")
         } finally {
+            if (tempSource != pdfFile) tempSource.delete()
+        }
+    }
+
+    /**
+     * Compresses a PDF document by re-rendering pages at target DPI/quality.
+     */
+    suspend fun compressPdf(
+        pdfFile: File,
+        scaleFactor: Float = 1.0f,
+        quality: Int = 75,
+        outputBaseName: String = "Compressed"
+    ): PdfProcessResult = withContext(Dispatchers.IO) {
+        val tempSource = if (fileManager.cryptoManager.isFileEncrypted(pdfFile)) {
+            fileManager.createTempDecryptedCopy(pdfFile)
+        } else {
+            pdfFile
+        }
+
+        val compressedDoc = PdfDocument()
+        try {
+            var pageCounter = 0
+            ParcelFileDescriptor.open(tempSource, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                PdfRenderer(pfd).use { renderer ->
+                    val total = renderer.pageCount
+                    for (i in 0 until total) {
+                        pageCounter++
+                        val page = renderer.openPage(i)
+                        val w = (page.width * scaleFactor).toInt().coerceAtLeast(1)
+                        val h = (page.height * scaleFactor).toInt().coerceAtLeast(1)
+
+                        val pageInfo = PdfDocument.PageInfo.Builder(page.width, page.height, pageCounter).create()
+                        val newPage = compressedDoc.startPage(pageInfo)
+
+                        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.RGB_565)
+                        Canvas(bitmap).drawColor(android.graphics.Color.WHITE)
+                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
+                        page.close()
+
+                        newPage.canvas.drawBitmap(bitmap, null, Rect(0, 0, page.width, page.height), Paint(Paint.FILTER_BITMAP_FLAG))
+                        compressedDoc.finishPage(newPage)
+                        bitmap.recycle()
+                    }
+                }
+            }
+
+            val outputFile = fileManager.createOutputFile(outputBaseName, "pdf")
+            FileOutputStream(outputFile).use { out ->
+                compressedDoc.writeTo(out)
+            }
+
+            if (!outputFile.exists() || outputFile.length() <= 0) {
+                return@withContext PdfProcessResult(false, emptyList(), 0, 0, "Failed to write compressed PDF")
+            }
+
+            PdfProcessResult(
+                success = true,
+                outputFiles = listOf(outputFile),
+                pageCount = pageCounter,
+                totalSizeBytes = outputFile.length()
+            )
+        } catch (e: Exception) {
+            PdfProcessResult(false, emptyList(), 0, 0, e.message ?: "Failed compressing PDF")
+        } finally {
+            compressedDoc.close()
+            if (tempSource != pdfFile) tempSource.delete()
+        }
+    }
+
+    /**
+     * Extracts specific 1-indexed pages from a PDF document into a new PDF document.
+     */
+    suspend fun extractPages(
+        pdfFile: File,
+        targetPages: List<Int>, // 1-indexed
+        outputBaseName: String = "Extracted"
+    ): PdfProcessResult = withContext(Dispatchers.IO) {
+        val tempSource = if (fileManager.cryptoManager.isFileEncrypted(pdfFile)) {
+            fileManager.createTempDecryptedCopy(pdfFile)
+        } else {
+            pdfFile
+        }
+
+        val extractedDoc = PdfDocument()
+        try {
+            var extractedCount = 0
+            ParcelFileDescriptor.open(tempSource, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                PdfRenderer(pfd).use { renderer ->
+                    val total = renderer.pageCount
+                    val validPages = targetPages.filter { it in 1..total }.distinct()
+                    if (validPages.isEmpty()) {
+                        return@withContext PdfProcessResult(false, emptyList(), 0, 0, "No valid pages to extract")
+                    }
+
+                    for (pageNumber in validPages) {
+                        extractedCount++
+                        val page = renderer.openPage(pageNumber - 1)
+                        val pageInfo = PdfDocument.PageInfo.Builder(page.width, page.height, extractedCount).create()
+                        val newPage = extractedDoc.startPage(pageInfo)
+
+                        val bitmap = Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)
+                        Canvas(bitmap).drawColor(android.graphics.Color.WHITE)
+                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
+                        page.close()
+
+                        newPage.canvas.drawBitmap(bitmap, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
+                        extractedDoc.finishPage(newPage)
+                        bitmap.recycle()
+                    }
+                }
+            }
+
+            val outputFile = fileManager.createOutputFile(outputBaseName, "pdf")
+            FileOutputStream(outputFile).use { out ->
+                extractedDoc.writeTo(out)
+            }
+
+            if (!outputFile.exists() || outputFile.length() <= 0) {
+                return@withContext PdfProcessResult(false, emptyList(), 0, 0, "Failed to verify extracted PDF output")
+            }
+
+            PdfProcessResult(
+                success = true,
+                outputFiles = listOf(outputFile),
+                pageCount = extractedCount,
+                totalSizeBytes = outputFile.length()
+            )
+        } catch (e: Exception) {
+            PdfProcessResult(false, emptyList(), 0, 0, e.message ?: "Failed extracting PDF pages")
+        } finally {
+            extractedDoc.close()
+            if (tempSource != pdfFile) tempSource.delete()
+        }
+    }
+
+    /**
+     * Reorders pages in a PDF document based on a specified list of 1-indexed page indices.
+     */
+    suspend fun reorderPages(
+        pdfFile: File,
+        newOrder: List<Int>, // 1-indexed
+        outputBaseName: String = "Reordered"
+    ): PdfProcessResult = withContext(Dispatchers.IO) {
+        val tempSource = if (fileManager.cryptoManager.isFileEncrypted(pdfFile)) {
+            fileManager.createTempDecryptedCopy(pdfFile)
+        } else {
+            pdfFile
+        }
+
+        val reorderedDoc = PdfDocument()
+        try {
+            var reorderedCount = 0
+            ParcelFileDescriptor.open(tempSource, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                PdfRenderer(pfd).use { renderer ->
+                    val total = renderer.pageCount
+                    val validOrder = newOrder.filter { it in 1..total }
+                    if (validOrder.isEmpty()) {
+                        return@withContext PdfProcessResult(false, emptyList(), 0, 0, "No valid page order provided")
+                    }
+
+                    for (pageNumber in validOrder) {
+                        reorderedCount++
+                        val page = renderer.openPage(pageNumber - 1)
+                        val pageInfo = PdfDocument.PageInfo.Builder(page.width, page.height, reorderedCount).create()
+                        val newPage = reorderedDoc.startPage(pageInfo)
+
+                        val bitmap = Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)
+                        Canvas(bitmap).drawColor(android.graphics.Color.WHITE)
+                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
+                        page.close()
+
+                        newPage.canvas.drawBitmap(bitmap, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
+                        reorderedDoc.finishPage(newPage)
+                        bitmap.recycle()
+                    }
+                }
+            }
+
+            val outputFile = fileManager.createOutputFile(outputBaseName, "pdf")
+            FileOutputStream(outputFile).use { out ->
+                reorderedDoc.writeTo(out)
+            }
+
+            if (!outputFile.exists() || outputFile.length() <= 0) {
+                return@withContext PdfProcessResult(false, emptyList(), 0, 0, "Failed to verify reordered PDF output")
+            }
+
+            PdfProcessResult(
+                success = true,
+                outputFiles = listOf(outputFile),
+                pageCount = reorderedCount,
+                totalSizeBytes = outputFile.length()
+            )
+        } catch (e: Exception) {
+            PdfProcessResult(false, emptyList(), 0, 0, e.message ?: "Failed reordering PDF pages")
+        } finally {
+            reorderedDoc.close()
             if (tempSource != pdfFile) tempSource.delete()
         }
     }
